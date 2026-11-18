@@ -42,7 +42,7 @@
     "id": "7a24b4f24c3b3da1",
     "type": "function",
     "name": "Detailansicht",
-    "func": "// .../reco/+/+ -> Detailansicht aller Routen.\n// Für jede Route wird hier die komplette Ansicht als HTML gebaut. Das Template-Widget\n// im Dashboard zeigt davon die Route, die im jeweiligen Browser ausgewählt ist.\n// (Die Auswahl merkt sich jeder Browser selbst, Nutzer stören sich also nicht.)\nconst cfg = global.get('cfg');\nlet recos = context.get('recos');\nif (!recos || recos.__prefix !== cfg.prefix) recos = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') delete recos[key];\nelse recos[key] = msg.payload;\ncontext.set('recos', recos);\n\n// Texte aus MQTT-Nachrichten immer maskieren (öffentlicher Broker!)\nconst esc = s => String(s == null ? '' : s).replace(/[&<>\"']/g,\n    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst time = ts => ts ? new Date(ts).toLocaleTimeString('de-DE',\n    { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '–';\nconst icon = { bike: '🚲', transit: '🚇', walk: '🚶' };\nconst row = (k, v) => '<tr><td>' + k + '</td><td>' + v + '</td></tr>';\n\nfunction render(r) {\n    const f = r.facts || {};\n    const best = r.options.find(o => o.mode === r.best) || { why: [] };\n    let h = '';\n    // --- Empfehlung\n    h += '<div class=\"mm-hero mm-' + r.best + '\"><div class=\"mm-hero-icon\">' + icon[r.best] + '</div><div>' +\n        '<div class=\"mm-hero-label\">Empfehlung für „' + esc(r.name) + '“</div>' +\n        '<div class=\"mm-hero-title\">' + esc(r.bestLabel) + ' · ' + r.bestMin + ' min</div>' +\n        '<div class=\"mm-hero-why\">' + esc(best.why.join(' · ')) + '</div></div></div>';\n    h += '<div class=\"mm-route\">' + esc(f.fromAddress) + ' → ' + esc(f.toAddress) + '</div>';\n\n    // --- Vergleich der Optionen\n    h += '<div class=\"mm-h\">Vergleich</div><div class=\"mm-cards\">';\n    for (const o of r.options) {\n        h += '<div class=\"mm-card' + (o.mode === r.best ? ' mm-best' : '') + (o.ok ? '' : ' mm-off') + '\">' +\n            '<div class=\"mm-card-top\"><span>' + icon[o.mode] + ' ' + esc(o.label) + '</span><b>' +\n            (o.ok ? o.min + ' min' : 'nicht möglich') + '</b></div><ul>' +\n            o.why.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>';\n    }\n    h += '</div>';\n\n    // --- Strecke\n    const fs = f.fromStation || {}, ts = f.toStation || {}, b = f.bike;\n    h += '<div class=\"mm-h\">Strecke</div><table class=\"mm-table\">';\n    h += row('Start', esc(f.fromAddress));\n    h += row('Station am Start', esc(fs.name) + ' <span class=\"mm-dim\">(' + fs.distM + ' m, ca. ' + Math.round(fs.walkMin) + ' min zu Fuß)</span>');\n    if (b && !f.sameStation) {\n        h += row('Radstrecke', b.km + ' km · ' + Math.round(b.min) + ' min Fahrt <span class=\"mm-dim\">(Station → Station)</span>');\n        h += row('Höhenmeter', b.ascent != null ? '↑ ' + Math.round(b.ascent) + ' m · ↓ ' + Math.round(b.descent) + ' m' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n        h += row('Radweganteil', b.cyclewayPct != null ? b.cyclewayPct + ' %' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n        h += row('Steile Abschnitte (ab 7 %)', b.steepPct != null ? b.steepPct + ' % der Strecke' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n    } else {\n        h += row('Radstrecke', '<span class=\"mm-dim\">entfällt (Start und Ziel an derselben Station)</span>');\n    }\n    h += row('Station am Ziel', esc(ts.name) + ' <span class=\"mm-dim\">(' + ts.distM + ' m, ca. ' + Math.round(ts.walkMin) + ' min zu Fuß)</span>');\n    h += row('Ziel', esc(f.toAddress));\n    h += row('Fußweg komplett', f.walk.km + ' km · ' + Math.round(f.walk.min) + ' min');\n    h += row('ÖPNV', Math.round(f.transit.min) + ' min <span class=\"mm-dim\">(Schätzung)</span>');\n    h += '</table>';\n\n    // --- Live-Lage\n    const w = f.weather;\n    h += '<div class=\"mm-h\">Live-Lage</div><table class=\"mm-table\">';\n    h += row('Räder an ' + esc(fs.name), fs.bikes != null ? '<b>' + fs.bikes + '</b> von ' + fs.capacity + ' <span class=\"mm-dim\">(Stand ' + time(fs.ts) + ')</span>' : '<span class=\"mm-dim\">keine Daten</span>');\n    h += row('Freie Plätze an ' + esc(ts.name), ts.docks != null ? '<b>' + ts.docks + '</b> von ' + ts.capacity + ' <span class=\"mm-dim\">(Stand ' + time(ts.ts) + ')</span>' : '<span class=\"mm-dim\">keine Daten</span>');\n    h += row('Wetter', w && w.ok ? w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind <span class=\"mm-dim\">(Stand ' + time(w.ts) + (w.demo ? ', DEMO' : '') + ')</span>' : '<span class=\"mm-dim\">keine aktuellen Daten</span>');\n    const srcCls = s => String(s).indexOf('online') === 0 ? 'mm-ok' : 'mm-bad';\n    h += row('Datenquellen', 'BiciMAD: <span class=\"' + srcCls(f.sources.bicimad) + '\">' + esc(f.sources.bicimad) + '</span> · Wetter: <span class=\"' + srcCls(f.sources.weather) + '\">' + esc(f.sources.weather) + '</span> · Profil: ' + esc(f.sources.profile));\n    h += '</table>';\n\n    if (r.notes && r.notes.length) h += '<div class=\"mm-notes\">ℹ ' + r.notes.map(esc).join('<br>ℹ ') + '</div>';\n    h += '<div class=\"mm-foot\">Stand: ' + time(Date.parse(r.updated)) + ' · Nutzer: ' + esc(r.user) + '</div>';\n    return h;\n}\n\nconst routes = Object.keys(recos).filter(k => k !== '__prefix').sort().map(k => {\n    const r = recos[k];\n    return { key: k, label: r.user + ' – ' + r.name, html: render(r) };\n});\nreturn { payload: { routes: routes } };\n",
+    "func": "// .../reco/+/+ -> Routenkarten + Detailansicht aller Routen.\n// Für jede Route: die Daten der Karte (Empfehlung, Kurzbegründung, Vergleich, Abfahrt)\n// und die komplette Detailansicht als HTML. Das Template-Widget zeigt alle Karten;\n// ein Klick auf eine Karte öffnet darunter die Details (Auswahl merkt sich jeder Browser).\nconst cfg = global.get('cfg');\nlet recos = context.get('recos');\nif (!recos || recos.__prefix !== cfg.prefix) recos = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') delete recos[key];\nelse recos[key] = msg.payload;\ncontext.set('recos', recos);\n\n// Texte aus MQTT-Nachrichten immer maskieren (öffentlicher Broker!)\nconst esc = s => String(s == null ? '' : s).replace(/[&<>\"']/g,\n    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst time = ts => ts ? new Date(ts).toLocaleTimeString('de-DE',\n    { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '–';\nconst icon = { bike: '🚲', transit: '🚌', walk: '🚶' };\nconst row = (k, v) => '<tr><td>' + k + '</td><td>' + v + '</td></tr>';\n\nfunction render(r) {\n    const f = r.facts || {};\n    const best = r.options.find(o => o.mode === r.best) || { why: [] };\n    let h = '';\n    // --- Empfehlung\n    h += '<div class=\"mm-hero mm-' + r.best + '\"><div class=\"mm-hero-icon\">' + icon[r.best] + '</div><div>' +\n        '<div class=\"mm-hero-label\">Empfehlung für „' + esc(r.name) + '“</div>' +\n        '<div class=\"mm-hero-title\">' + esc(r.bestLabel) + ' · ' + r.bestMin + ' min</div>' +\n        '<div class=\"mm-hero-why\">' + esc(r.reason || best.why.join(' · ')) + '</div></div></div>';\n    h += '<div class=\"mm-route\">' + esc(f.fromAddress) + ' → ' + esc(f.toAddress) + '</div>';\n\n    // --- Vergleich der Optionen\n    h += '<div class=\"mm-h\">Vergleich</div><div class=\"mm-cards\">';\n    for (const o of r.options) {\n        h += '<div class=\"mm-card' + (o.mode === r.best ? ' mm-best' : '') + (o.ok ? '' : ' mm-off') + '\">' +\n            '<div class=\"mm-card-top\"><span>' + icon[o.mode] + ' ' + esc(o.label) + '</span><b>' +\n            (o.ok ? o.min + ' min' : 'nicht möglich') + '</b></div><ul>' +\n            o.why.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>';\n    }\n    h += '</div>';\n\n    // --- Strecke\n    const fs = f.fromStation || {}, ts = f.toStation || {}, b = f.bike;\n    h += '<div class=\"mm-h\">Strecke</div><table class=\"mm-table\">';\n    h += row('Start', esc(f.fromAddress));\n    h += row('Station am Start', esc(fs.name) + ' <span class=\"mm-dim\">(' + fs.distM + ' m, ca. ' + Math.round(fs.walkMin) + ' min zu Fuß)</span>');\n    if (b && !f.sameStation) {\n        h += row('Radstrecke', b.km + ' km · ' + Math.round(b.min) + ' min Fahrt <span class=\"mm-dim\">(Station → Station)</span>');\n        h += row('Höhenmeter', b.ascent != null ? '↑ ' + Math.round(b.ascent) + ' m · ↓ ' + Math.round(b.descent) + ' m' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n        h += row('Radweganteil', b.cyclewayPct != null ? b.cyclewayPct + ' %' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n        h += row('Steile Abschnitte (ab 7 %)', b.steepPct != null ? b.steepPct + ' % der Strecke' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n    } else {\n        h += row('Radstrecke', '<span class=\"mm-dim\">entfällt (Start und Ziel an derselben Station)</span>');\n    }\n    h += row('Station am Ziel', esc(ts.name) + ' <span class=\"mm-dim\">(' + ts.distM + ' m, ca. ' + Math.round(ts.walkMin) + ' min zu Fuß)</span>');\n    h += row('Ziel', esc(f.toAddress));\n    h += row('Abfahrt', r.departure ? esc(r.departure.text) + (r.nextDepartureText ? ' <span class=\"mm-dim\">(nächste: ' + esc(r.nextDepartureText) + ')</span>' : '') : '<span class=\"mm-dim\">keine Abfahrtszeit</span>');\n    h += row('Fußweg komplett', f.walk.km + ' km · ' + Math.round(f.walk.min) + ' min');\n    h += row('ÖPNV', Math.round(f.transit.min) + ' min <span class=\"mm-dim\">(Schätzung)</span>');\n    h += '</table>';\n\n    // --- Live-Lage\n    const w = f.weather;\n    h += '<div class=\"mm-h\">Live-Lage</div><table class=\"mm-table\">';\n    h += row('Räder an ' + esc(fs.name), fs.bikes != null ? '<b>' + fs.bikes + '</b> von ' + fs.capacity + ' <span class=\"mm-dim\">(Stand ' + time(fs.ts) + ')</span>' : '<span class=\"mm-dim\">keine Daten</span>');\n    h += row('Freie Plätze an ' + esc(ts.name), ts.docks != null ? '<b>' + ts.docks + '</b> von ' + ts.capacity + ' <span class=\"mm-dim\">(Stand ' + time(ts.ts) + ')</span>' : '<span class=\"mm-dim\">keine Daten</span>');\n    h += row('Wetter', w && w.ok ? w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind <span class=\"mm-dim\">(Stand ' + time(w.ts) + (w.demo ? ', Simulation' : '') + ')</span>' : '<span class=\"mm-dim\">keine aktuellen Daten</span>');\n    const srcCls = s => String(s).indexOf('online') === 0 ? 'mm-ok' : 'mm-bad';\n    h += row('Datenquellen', 'BiciMAD: <span class=\"' + srcCls(f.sources.bicimad) + '\">' + esc(f.sources.bicimad) + '</span> · Wetter: <span class=\"' + srcCls(f.sources.weather) + '\">' + esc(f.sources.weather) + '</span> · Profil: ' + esc(f.sources.profile));\n    h += '</table>';\n\n    if (r.notes && r.notes.length) h += '<div class=\"mm-notes\">ℹ ' + r.notes.map(esc).join('<br>ℹ ') + '</div>';\n    h += '<div class=\"mm-foot\">Stand: ' + time(Date.parse(r.updated)) + ' · Nutzer: ' + esc(r.user) + '</div>';\n    return h;\n}\n\nconst routes = Object.keys(recos).filter(k => k !== '__prefix').sort().map(k => {\n    const r = recos[k];\n    const bike = r.options.find(o => o.mode === 'bike') || {};\n    return {\n        key: k, label: r.user + ' – ' + r.name, user: r.user, name: r.name,\n        from: r.from, to: r.to,\n        best: r.best, bestLabel: r.bestLabel, bestMin: r.bestMin, icon: icon[r.best],\n        reason: r.reason || '',\n        options: r.options.map(o => ({ mode: o.mode, label: o.label.replace(' (Schätzung)', ''), icon: icon[o.mode],\n            min: o.min, ok: o.ok, estimated: !!o.estimated })),\n        knapp: !!bike.knapp,\n        departureText: r.departure ? r.departure.text : null,\n        nextDeparture: r.nextDeparture || null,\n        nextDepartureText: r.nextDepartureText || null,\n        hint: (r.notes || []).find(n => /fehlen|ohne Wetter/.test(n)) || null,\n        demo: !!(r.facts && r.facts.weather && r.facts.weather.demo),\n        windowMin: cfg.reco.windowMin,\n        html: render(r)\n    };\n});\nreturn { payload: { routes: routes } };\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -61,7 +61,7 @@
   {
     "id": "ae89ea10c631b485",
     "type": "ui-template",
-    "name": "Route & Empfehlung",
+    "name": "Routenkarten & Details",
     "group": "b3714cda0f816020",
     "page": "",
     "ui": "",
@@ -69,7 +69,7 @@
     "width": "12",
     "height": "0",
     "head": "",
-    "format": "<template>\n    <div class=\"mm\">\n        <v-select v-model=\"selected\" :items=\"routes\" item-title=\"label\" item-value=\"key\"\n            label=\"Route wählen\" variant=\"outlined\" density=\"comfortable\" hide-details\n            no-data-text=\"Noch keine Routen – lege unter „Routen verwalten“ eine an\"></v-select>\n        <div v-if=\"current\" class=\"mm-body\" v-html=\"current.html\"></div>\n        <div v-else class=\"mm-empty\">Wähle oben eine Route, um Empfehlung und alle Fakten zu sehen.</div>\n    </div>\n</template>\n\n<script>\nexport default {\n    data () {\n        return { selected: null }\n    },\n    computed: {\n        routes () {\n            return (this.msg && this.msg.payload && this.msg.payload.routes) || []\n        },\n        current () {\n            return this.routes.find(r => r.key === this.selected)\n        }\n    },\n    watch: {\n        // Auswahl pro Browser merken (nicht für andere Nutzer sichtbar)\n        selected (v) {\n            try { window.localStorage.setItem('madridmove-route', v || '') } catch (e) {}\n        }\n    },\n    mounted () {\n        try { this.selected = window.localStorage.getItem('madridmove-route') || null } catch (e) {}\n    }\n}\n</script>\n\n<style>\n.mm { width: 100%; }\n.mm-body { margin-top: 16px; }\n.mm-empty { margin-top: 16px; color: #6b7280; }\n.mm-hero { display: flex; gap: 16px; align-items: center; padding: 16px 18px; border-radius: 10px; color: #fff; }\n.mm-hero.mm-bike { background: #1f6f50; }\n.mm-hero.mm-transit { background: #1d4f91; }\n.mm-hero.mm-walk { background: #7a4e14; }\n.mm-hero-icon { font-size: 40px; line-height: 1; }\n.mm-hero-label { font-size: 13px; opacity: .85; }\n.mm-hero-title { font-size: 26px; font-weight: 700; margin: 2px 0; }\n.mm-hero-why { font-size: 14px; opacity: .92; }\n.mm-route { margin: 10px 2px 0; color: #374151; font-size: 14px; }\n.mm-h { margin: 20px 0 8px; font-weight: 700; font-size: 15px; color: #111827; }\n.mm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }\n.mm-card { border: 1px solid #dde1e4; border-radius: 8px; padding: 10px 12px; background: #fff; }\n.mm-card.mm-best { border: 2px solid #1f6f50; background: #f1f8f4; }\n.mm-card.mm-off { opacity: .6; }\n.mm-card-top { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 4px; }\n.mm-card ul { margin: 0; padding-left: 18px; font-size: 13px; color: #4b5563; }\n.mm-table { width: 100%; border-collapse: collapse; font-size: 14px; }\n.mm-table td { padding: 6px 4px; border-bottom: 1px solid #eef0f2; vertical-align: top; }\n.mm-table td:first-child { color: #6b7280; width: 38%; }\n.mm-dim { color: #9ca3af; }\n.mm-ok { color: #1f6f50; font-weight: 600; }\n.mm-bad { color: #b42318; font-weight: 600; }\n.mm-notes { margin-top: 14px; padding: 10px 12px; background: #fff8e6; border-radius: 8px; font-size: 13px; color: #6b4e00; }\n.mm-foot { margin-top: 12px; font-size: 12px; color: #9ca3af; }\n</style>\n",
+    "format": "<template>\n    <div class=\"mm\">\n        <div v-if=\"!routes.length\" class=\"mm-empty\">\n            Noch keine Routen. Lege unter „Routen verwalten“ eine an oder klicke unter „System &amp; Demo“ auf „Demo-Routen anlegen“.\n        </div>\n\n        <!-- Eine Karte pro Route -->\n        <div class=\"mm-grid\">\n            <div v-for=\"r in routes\" :key=\"r.key\" class=\"mm-rc\" :class=\"['mm-rc-' + r.best, { 'mm-rc-sel': r.key === selected }]\"\n                 @click=\"selected = (selected === r.key ? null : r.key)\">\n                <div class=\"mm-rc-head\">\n                    <div>\n                        <div class=\"mm-rc-name\">{{ r.name }}</div>\n                        <div class=\"mm-rc-sub\">{{ r.user }} · {{ r.from }} → {{ r.to }}</div>\n                    </div>\n                    <div class=\"mm-badges\">\n                        <span v-if=\"active(r)\" class=\"mm-badge mm-badge-on\">aktiv</span>\n                        <span v-if=\"r.knapp\" class=\"mm-badge mm-badge-warn\">knapp</span>\n                        <span v-if=\"r.demo\" class=\"mm-badge mm-badge-demo\">Simulation</span>\n                    </div>\n                </div>\n\n                <div class=\"mm-rc-best\">\n                    <span class=\"mm-rc-icon\">{{ r.icon }}</span>\n                    <span class=\"mm-rc-label\">{{ r.bestLabel.replace(' (Schätzung)', '') }}</span>\n                    <span class=\"mm-rc-min\">{{ r.bestMin }} min</span>\n                </div>\n                <div class=\"mm-rc-why\">{{ r.reason }}</div>\n\n                <div class=\"mm-bars\">\n                    <div v-for=\"o in r.options\" :key=\"o.mode\" class=\"mm-bar-row\" :class=\"{ 'mm-bar-off': !o.ok }\">\n                        <span class=\"mm-bar-name\">{{ o.icon }} {{ o.label }}{{ o.estimated ? '*' : '' }}</span>\n                        <span class=\"mm-bar-track\">\n                            <span class=\"mm-bar-fill\" :class=\"{ 'mm-bar-best': o.mode === r.best }\"\n                                  :style=\"{ width: (o.ok ? Math.max(6, o.min / maxMin(r) * 100) : 0) + '%' }\"></span>\n                        </span>\n                        <span class=\"mm-bar-val\">{{ o.ok ? o.min + ' min' : 'nicht möglich' }}</span>\n                    </div>\n                </div>\n\n                <div class=\"mm-rc-foot\">\n                    <span v-if=\"r.departureText\">🕒 {{ r.departureText }} · {{ countdown(r) }}</span>\n                    <span v-else>🕒 keine Abfahrtszeit</span>\n                </div>\n                <div v-if=\"r.hint\" class=\"mm-rc-hint\">ℹ {{ r.hint }}</div>\n            </div>\n        </div>\n        <div v-if=\"routes.length\" class=\"mm-foot\">* ÖPNV-Zeiten sind Schätzungen (Fußwege + Warten + Fahrt), kein Fahrplan. Karte anklicken für alle Details.</div>\n\n        <!-- Details der ausgewählten Route -->\n        <div v-if=\"current\" class=\"mm-body\" v-html=\"current.html\"></div>\n    </div>\n</template>\n\n<script>\nexport default {\n    data () {\n        return { selected: null, now: Date.now(), timer: null }\n    },\n    computed: {\n        routes () {\n            return (this.msg && this.msg.payload && this.msg.payload.routes) || []\n        },\n        current () {\n            return this.routes.find(r => r.key === this.selected)\n        }\n    },\n    methods: {\n        minutesLeft (r) {\n            if (!r.nextDeparture) return null\n            return Math.round((Date.parse(r.nextDeparture) - this.now) / 60000)\n        },\n        active (r) {\n            const m = this.minutesLeft(r)\n            return m !== null && m >= 0 && m <= (r.windowMin || 30)\n        },\n        countdown (r) {\n            const m = this.minutesLeft(r)\n            if (m === null) return 'keine Fahrt in den nächsten 7 Tagen'\n            if (m <= 0) return 'Abfahrt jetzt'\n            if (m < 60) return 'Abfahrt in ' + m + ' min'\n            return 'nächste: ' + r.nextDepartureText\n        },\n        maxMin (r) {\n            return Math.max(1, ...r.options.filter(o => o.ok).map(o => o.min))\n        }\n    },\n    watch: {\n        // Auswahl pro Browser merken (nicht für andere Nutzer sichtbar)\n        selected (v) {\n            try { window.localStorage.setItem('madridmove-route', v || '') } catch (e) {}\n        }\n    },\n    mounted () {\n        try { this.selected = window.localStorage.getItem('madridmove-route') || null } catch (e) {}\n        // Countdown selbst weiterzählen (die Empfehlung kommt nur bei Änderungen neu)\n        this.timer = setInterval(() => { this.now = Date.now() }, 15000)\n    },\n    unmounted () {\n        clearInterval(this.timer)\n    }\n}\n</script>\n\n<style>\n.mm { width: 100%; }\n.mm-empty { color: #6b7280; padding: 8px 2px; }\n.mm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }\n.mm-rc { border: 1px solid #dde1e4; border-left: 6px solid #9ca3af; border-radius: 10px; padding: 12px 14px; background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }\n.mm-rc:hover { box-shadow: 0 1px 6px rgba(0,0,0,.08); }\n.mm-rc-sel { box-shadow: 0 0 0 2px #1f6f50 inset; }\n.mm-rc-bike { border-left-color: #1f6f50; }\n.mm-rc-transit { border-left-color: #1d4f91; }\n.mm-rc-walk { border-left-color: #7a4e14; }\n.mm-rc-head { display: flex; justify-content: space-between; gap: 8px; }\n.mm-rc-name { font-weight: 700; font-size: 16px; color: #111827; }\n.mm-rc-sub { font-size: 12.5px; color: #6b7280; }\n.mm-badges { display: flex; gap: 4px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }\n.mm-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }\n.mm-badge-on { background: #1f6f50; color: #fff; }\n.mm-badge-warn { background: #fde68a; color: #6b4e00; }\n.mm-badge-demo { background: #e0e7ff; color: #3730a3; }\n.mm-rc-best { display: flex; align-items: baseline; gap: 8px; }\n.mm-rc-icon { font-size: 28px; line-height: 1; }\n.mm-rc-label { font-size: 22px; font-weight: 700; }\n.mm-rc-bike .mm-rc-label { color: #1f6f50; }\n.mm-rc-transit .mm-rc-label { color: #1d4f91; }\n.mm-rc-walk .mm-rc-label { color: #7a4e14; }\n.mm-rc-min { font-size: 22px; font-weight: 700; margin-left: auto; color: #111827; }\n.mm-rc-why { font-size: 13px; color: #374151; min-height: 18px; }\n.mm-bars { display: flex; flex-direction: column; gap: 4px; }\n.mm-bar-row { display: grid; grid-template-columns: 92px 1fr 88px; align-items: center; gap: 8px; font-size: 12.5px; }\n.mm-bar-name { color: #374151; white-space: nowrap; }\n.mm-bar-track { height: 8px; background: #f1f3f5; border-radius: 4px; overflow: hidden; }\n.mm-bar-fill { display: block; height: 100%; background: #c3cad1; border-radius: 4px; }\n.mm-bar-best { background: #1f6f50; }\n.mm-rc-transit .mm-bar-best { background: #1d4f91; }\n.mm-rc-walk .mm-bar-best { background: #7a4e14; }\n.mm-bar-val { text-align: right; color: #374151; }\n.mm-bar-off .mm-bar-name, .mm-bar-off .mm-bar-val { color: #b42318; }\n.mm-rc-foot { font-size: 13px; color: #374151; border-top: 1px solid #eef0f2; padding-top: 8px; }\n.mm-rc-hint { font-size: 12.5px; background: #fff8e6; color: #6b4e00; border-radius: 6px; padding: 6px 8px; }\n\n.mm-body { margin-top: 18px; }\n.mm-hero { display: flex; gap: 16px; align-items: center; padding: 16px 18px; border-radius: 10px; color: #fff; }\n.mm-hero.mm-bike { background: #1f6f50; }\n.mm-hero.mm-transit { background: #1d4f91; }\n.mm-hero.mm-walk { background: #7a4e14; }\n.mm-hero-icon { font-size: 40px; line-height: 1; }\n.mm-hero-label { font-size: 13px; opacity: .85; }\n.mm-hero-title { font-size: 26px; font-weight: 700; margin: 2px 0; }\n.mm-hero-why { font-size: 14px; opacity: .92; }\n.mm-route { margin: 10px 2px 0; color: #374151; font-size: 14px; }\n.mm-h { margin: 20px 0 8px; font-weight: 700; font-size: 15px; color: #111827; }\n.mm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }\n.mm-card { border: 1px solid #dde1e4; border-radius: 8px; padding: 10px 12px; background: #fff; }\n.mm-card.mm-best { border: 2px solid #1f6f50; background: #f1f8f4; }\n.mm-card.mm-off { opacity: .6; }\n.mm-card-top { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 4px; }\n.mm-card ul { margin: 0; padding-left: 18px; font-size: 13px; color: #4b5563; }\n.mm-table { width: 100%; border-collapse: collapse; font-size: 14px; }\n.mm-table td { padding: 6px 4px; border-bottom: 1px solid #eef0f2; vertical-align: top; }\n.mm-table td:first-child { color: #6b7280; width: 38%; }\n.mm-dim { color: #9ca3af; }\n.mm-ok { color: #1f6f50; font-weight: 600; }\n.mm-bad { color: #b42318; font-weight: 600; }\n.mm-notes { margin-top: 14px; padding: 10px 12px; background: #fff8e6; border-radius: 8px; font-size: 13px; color: #6b4e00; }\n.mm-foot { margin-top: 10px; font-size: 12px; color: #9ca3af; }\n</style>\n",
     "storeOutMessages": true,
     "passthru": false,
     "resendOnRefresh": true,
@@ -121,7 +121,7 @@
     "wires": [
       []
     ],
-    "group": "ecc9c7ceed7e0af6",
+    "group": "3571b3e264db9f2c",
     "order": 1,
     "width": "12",
     "className": "",
@@ -144,7 +144,7 @@
     "value": "payload",
     "valueType": "msg",
     "wires": [],
-    "group": "ecc9c7ceed7e0af6",
+    "group": "3571b3e264db9f2c",
     "order": 2,
     "width": "12",
     "height": "0",
@@ -225,7 +225,7 @@
     "id": "969ebbd97eb65c0e",
     "type": "comment",
     "z": "cf931b46039477f7",
-    "name": "Seite \"Routen verwalten\": Adressen → Geocoding → Route",
+    "name": "Seite \"Routen verwalten\": feste Orte + Adresssuche → Route mit Abfahrtszeit",
     "info": "Jedes Feld sendet mit eigenem msg.topic an **Formular**. Beim Anlegen werden Start- und Zieladresse nacheinander per Nominatim (OpenStreetMap) in Koordinaten umgewandelt (max. 1 Anfrage pro Sekunde), dann wird die Route retained veröffentlicht.",
     "x": 260,
     "y": 240,
@@ -235,8 +235,8 @@
     "id": "5863149a8965c7e0",
     "type": "function",
     "name": "Formular",
-    "func": "// Formular \"Route anlegen / löschen\". Jedes Eingabefeld sendet mit eigenem msg.topic.\n// Ausgang 1: MQTT (Route löschen) | 2: Statustext | 3: Geocoding der Adressen starten\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst f = flow.get('form') || {};\nconst slug = s => String(s || '').toLowerCase().normalize('NFD')\n    .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '').slice(0, 30);\n\nswitch (msg.topic) {\n    case 'user': f.user = msg.payload; break;\n    case 'name': f.name = msg.payload; break;\n    case 'fromAddr': f.fromAddr = msg.payload; break;\n    case 'toAddr': f.toAddr = msg.payload; break;\n    case 'delSel': f.del = msg.payload; break;\n    case 'create': {\n        const u = slug(f.user), r = slug(f.name);\n        const a = String(f.fromAddr || '').trim(), b = String(f.toAddr || '').trim();\n        if (!u || !r || !a || !b) return [null, { payload: '⚠ Bitte Name, Routenname, Start- und Zieladresse ausfüllen.' }, null];\n        if (a.toLowerCase() === b.toLowerCase()) return [null, { payload: '⚠ Start und Ziel sind gleich.' }, null];\n        const existing = Object.keys(flow.get('routeKeys') || {});\n        const mine = existing.filter(k => k.split('/')[0] === u && k !== u + '/' + r);\n        if (mine.length >= cfg.reco.maxRoutesPerUser) {\n            return [null, { payload: '⚠ Höchstens ' + cfg.reco.maxRoutesPerUser + ' Routen pro Nutzer.' }, null];\n        }\n        flow.set('form', f);\n        const job = { user: u, routeId: r, name: f.name, fromAddr: a, toAddr: b, step: 'from' };\n        return [null, { payload: '🔎 Suche Adressen …' }, { job: job }];\n    }\n    case 'delete': {\n        if (!f.del) return [null, { payload: '⚠ Bitte eine Route zum Löschen wählen.' }, null];\n        const key = f.del;\n        f.del = null;\n        flow.set('form', f);\n        // Leere Retained-Nachricht = gespeicherte Nachricht auf dem Broker löschen\n        return [\n            { topic: P + '/routes/' + key, payload: '', qos: 1, retain: true },\n            { payload: '🗑 Route ' + key + ' gelöscht.' },\n            null\n        ];\n    }\n}\nflow.set('form', f);\nreturn null;\n",
-    "outputs": 3,
+    "func": "// Formular \"Route anlegen / löschen\". Jedes Eingabefeld sendet mit eigenem msg.topic.\n// Start und Ziel kommen aus den Auswahllisten (feste Orte + Suchtreffer, siehe \"Ortsliste bauen\").\n// Ausgang 1: MQTT (Route anlegen / löschen) | 2: Statustext\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst f = flow.get('form') || { time: '08:30', days: [1, 2, 3, 4, 5] };\nconst slug = s => String(s || '').toLowerCase().normalize('NFD')\n    .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '').slice(0, 30);\nconst save = () => flow.set('form', f);\n\nswitch (msg.topic) {\n    case 'user': f.user = msg.payload; break;\n    case 'name': f.name = msg.payload; break;\n    case 'from': f.from = msg.payload; break;\n    case 'to': f.to = msg.payload; break;\n    case 'time': f.time = msg.payload; break;\n    case 'days': f.days = (Array.isArray(msg.payload) ? msg.payload : [msg.payload]).map(Number).filter(Boolean); break;\n    case 'delSel': f.del = msg.payload; break;\n    case 'create': {\n        const u = slug(f.user), r = slug(f.name);\n        const idx = flow.get('placeIndex') || {};\n        const a = idx[f.from], b = idx[f.to];\n        if (!u || !r) return [null, { payload: '⚠ Bitte deinen Namen und einen Routennamen eingeben.' }];\n        if (!a || !b) return [null, { payload: '⚠ Bitte Start und Ziel auswählen (Ort aus der Liste oder vorher eine Adresse suchen).' }];\n        if (f.from === f.to) return [null, { payload: '⚠ Start und Ziel sind gleich.' }];\n        if (!/^\\d{1,2}:\\d{2}$/.test(String(f.time || ''))) return [null, { payload: '⚠ Bitte eine Abfahrtszeit eingeben (z. B. 08:30).' }];\n        if (!f.days || !f.days.length) return [null, { payload: '⚠ Bitte mindestens einen Wochentag wählen.' }];\n        const existing = Object.keys(flow.get('routeKeys') || {});\n        const mine = existing.filter(k => k.split('/')[0] === u && k !== u + '/' + r);\n        if (mine.length >= cfg.reco.maxRoutesPerUser) {\n            return [null, { payload: '⚠ Höchstens ' + cfg.reco.maxRoutesPerUser + ' Routen pro Nutzer.' }];\n        }\n        save();\n        const time = f.time.padStart(5, '0');\n        const days = f.days.slice().sort();\n        const route = {\n            name: f.name,\n            from: { label: a.label, lat: a.lat, lon: a.lon },\n            to: { label: b.label, lat: b.lat, lon: b.lon },\n            departure: { time: time, days: days },\n            createdAt: new Date().toISOString()\n        };\n        return [\n            { topic: P + '/routes/' + u + '/' + r, payload: route, qos: 1, retain: true },\n            { payload: '✔ Route ' + u + '/' + r + ' angelegt: ' + a.label + ' → ' + b.label + ', Abfahrt ' + time +\n                '. Aufs Handy: ' + P + '/alerts/' + u }\n        ];\n    }\n    case 'delete': {\n        if (!f.del) return [null, { payload: '⚠ Bitte eine Route zum Löschen wählen.' }];\n        const key = f.del;\n        f.del = null;\n        save();\n        // Leere Retained-Nachricht = gespeicherte Nachricht auf dem Broker löschen\n        return [\n            { topic: P + '/routes/' + key, payload: '', qos: 1, retain: true },\n            { payload: '🗑 Route ' + key + ' gelöscht.' }\n        ];\n    }\n}\nsave();\nreturn null;\n",
+    "outputs": 2,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
@@ -248,9 +248,6 @@
       ],
       [
         "1ef55eb0d8e799a3"
-      ],
-      [
-        "16a6605892faba56"
       ]
     ],
     "x": 600,
@@ -324,72 +321,6 @@
     "z": "cf931b46039477f7"
   },
   {
-    "id": "7782080cde312c22",
-    "type": "ui-text-input",
-    "name": "Startadresse, z. B. Calle de Alcalá 50",
-    "label": "Startadresse, z. B. Calle de Alcalá 50",
-    "topic": "fromAddr",
-    "topicType": "str",
-    "mode": "text",
-    "tooltip": "",
-    "delay": 300,
-    "passthru": false,
-    "sendOnDelay": true,
-    "sendOnBlur": true,
-    "sendOnEnter": true,
-    "clearable": false,
-    "sendOnClear": false,
-    "icon": "",
-    "iconPosition": "left",
-    "iconInnerPosition": "inside",
-    "wires": [
-      [
-        "5863149a8965c7e0"
-      ]
-    ],
-    "group": "b84763072e254742",
-    "order": 3,
-    "width": "6",
-    "height": "1",
-    "className": "",
-    "x": 360,
-    "y": 370,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "33d52a5b93e24781",
-    "type": "ui-text-input",
-    "name": "Zieladresse, z. B. Calle de Alan Turing",
-    "label": "Zieladresse, z. B. Calle de Alan Turing",
-    "topic": "toAddr",
-    "topicType": "str",
-    "mode": "text",
-    "tooltip": "",
-    "delay": 300,
-    "passthru": false,
-    "sendOnDelay": true,
-    "sendOnBlur": true,
-    "sendOnEnter": true,
-    "clearable": false,
-    "sendOnClear": false,
-    "icon": "",
-    "iconPosition": "left",
-    "iconInnerPosition": "inside",
-    "wires": [
-      [
-        "5863149a8965c7e0"
-      ]
-    ],
-    "group": "b84763072e254742",
-    "order": 4,
-    "width": "6",
-    "height": "1",
-    "className": "",
-    "x": 360,
-    "y": 410,
-    "z": "cf931b46039477f7"
-  },
-  {
     "id": "3e38c3c0efe8734b",
     "type": "ui-button",
     "name": "Route anlegen",
@@ -420,7 +351,7 @@
       ]
     ],
     "group": "b84763072e254742",
-    "order": 5,
+    "order": 7,
     "width": "6",
     "height": "1",
     "className": "",
@@ -536,7 +467,7 @@
     "valueType": "msg",
     "wires": [],
     "group": "b84763072e254742",
-    "order": 6,
+    "order": 8,
     "width": "6",
     "height": "0",
     "className": "",
@@ -547,9 +478,9 @@
   {
     "id": "16a6605892faba56",
     "type": "function",
-    "name": "Geocoding-Anfrage",
-    "func": "// Baut die Geocoding-Anfrage für die aktuelle Adresse (Start oder Ziel).\n// Nominatim (OpenStreetMap): Suche begrenzt auf das Stadtgebiet von Madrid.\nconst cfg = global.get('cfg');\nconst job = msg.job;\nlet q = job.step === 'from' ? job.fromAddr : job.toAddr;\nif (!/madrid/i.test(q)) q += ', Madrid';\nconst url = cfg.apis.geocode + '?format=jsonv2&limit=1&countrycodes=es&bounded=1' +\n    '&viewbox=' + cfg.cityViewbox + '&q=' + encodeURIComponent(q);\nreturn {\n    job: job,\n    url: url,\n    headers: { 'User-Agent': cfg.apis.geocodeUserAgent, 'Accept-Language': 'es' }\n};\n",
-    "outputs": 1,
+    "name": "Suche starten",
+    "func": "// Adresssuche auf Knopfdruck (Nominatim / OpenStreetMap), begrenzt auf Madrid.\n// Bis zu 5 Treffer, aus denen der Nutzer in der Auswahlliste den richtigen wählt.\n// Ausgang 1: Anfrage an Nominatim | 2: Statustext\nconst cfg = global.get('cfg');\nif (msg.topic === 'query') { flow.set('searchText', msg.payload); return null; }\nlet q = String(flow.get('searchText') || '').trim();\nif (q.length < 3) return [null, { payload: '⚠ Bitte mindestens 3 Zeichen eingeben.' }];\nif (!/madrid/i.test(q)) q += ', Madrid';\nconst url = cfg.apis.geocode + '?format=jsonv2&limit=5&countrycodes=es&bounded=1' +\n    '&viewbox=' + cfg.cityViewbox + '&q=' + encodeURIComponent(q);\nreturn [{\n    query: q,\n    url: url,\n    headers: { 'User-Agent': cfg.apis.geocodeUserAgent, 'Accept-Language': 'es' }\n}, { payload: '🔎 Suche „' + q + '“ …' }];\n",
+    "outputs": 2,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
@@ -558,6 +489,9 @@
     "wires": [
       [
         "155274b118a78b12"
+      ],
+      [
+        "9f1be0ba4f6d86b5"
       ]
     ],
     "x": 820,
@@ -616,9 +550,9 @@
   {
     "id": "a6f8086352f51218",
     "type": "function",
-    "name": "Adresse auswerten",
-    "func": "// Wertet die Geocoding-Antwort aus.\n// Ausgang 1: nächste Adresse suchen | 2: Route veröffentlichen (MQTT) | 3: Statustext\nconst cfg = global.get('cfg');\nconst job = msg.job;\nconst hit = msg.statusCode === 200 && Array.isArray(msg.payload) && msg.payload[0];\nconst addr = job.step === 'from' ? job.fromAddr : job.toAddr;\nif (!hit) {\n    const why = msg.statusCode === 200 ? 'nicht gefunden' : 'Fehler beim Geocoding (HTTP ' + msg.statusCode + ')';\n    node.status({ fill: 'red', shape: 'ring', text: why + ': ' + addr });\n    return [null, null, { payload: '⚠ Adresse ' + why + ': \"' + addr + '\". Bitte genauer angeben, z. B. \"Calle de Alcalá 50\".' }];\n}\n// Kurzer Name: die ersten zwei bis drei Teile der Adresse\nconst parts = String(hit.display_name || addr).split(',').map(s => s.trim());\nconst label = parts.slice(0, /^\\d+$/.test(parts[0]) ? 3 : 2).join(', ');\nconst point = { address: addr, label: label, lat: Number(hit.lat), lon: Number(hit.lon) };\nif (job.step === 'from') {\n    job.from = point;\n    job.step = 'to';\n    node.status({ fill: 'blue', shape: 'dot', text: 'Start gefunden: ' + label });\n    return [{ job: job }, null, null];\n}\njob.to = point;\nnode.status({ fill: 'green', shape: 'dot', text: 'Route ' + job.user + '/' + job.routeId });\nconst route = { name: job.name, from: job.from, to: point, createdAt: new Date().toISOString() };\nreturn [null,\n    { topic: cfg.prefix + '/routes/' + job.user + '/' + job.routeId, payload: route, qos: 1, retain: true },\n    { payload: '✔ Route ' + job.user + '/' + job.routeId + ' angelegt: ' + job.from.label + ' → ' + label +\n        '. Aufs Handy: ' + cfg.prefix + '/alerts/' + job.user }];\n",
-    "outputs": 3,
+    "name": "Suchtreffer",
+    "func": "// Wertet die Nominatim-Antwort aus: bis zu 5 Treffer kommen oben in die Auswahllisten\n// für Start und Ziel (markiert mit 🔎). Der Nutzer sieht so, was gefunden wurde.\n// Ausgang 1: an \"Ortsliste bauen\" | 2: Statustext\nconst list = msg.statusCode === 200 && Array.isArray(msg.payload) ? msg.payload : null;\nif (!list) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Fehler HTTP ' + msg.statusCode });\n    return [null, { payload: '⚠ Fehler bei der Suche (HTTP ' + msg.statusCode + '). Bitte einen festen Ort wählen.' }];\n}\nif (!list.length) {\n    return [null, { payload: '⚠ Nichts gefunden für „' + msg.query + '“. Genauer angeben, z. B. „Calle de Alcalá 50“.' }];\n}\nconst stamp = Date.now().toString(36);\nconst hits = list.slice(0, 5).map((h, i) => {\n    // Kurzer Name: die ersten zwei bis drei Teile der Adresse\n    const parts = String(h.display_name || '').split(',').map(s => s.trim());\n    // \"50, Calle de Alcalá, ...\" -> \"Calle de Alcalá 50\"\n    const short = /^\\d+[a-zA-Z]?$/.test(parts[0]) ? parts[1] + ' ' + parts[0] : parts[0];\n    const area = parts.find(p => /^(Centro|Salamanca|Chamberí|Retiro|Arganzuela|Moncloa|Chamartín|Tetuán|Latina|Carabanchel|Usera|Puente de Vallecas|Villa de Vallecas|Ciudad Lineal|Hortaleza|Fuencarral|Moratalaz|San Blas|Barajas|Vicálvaro|Villaverde)/.test(p));\n    return { value: 'geo:' + stamp + '-' + i, label: short + (area && short.indexOf(area) < 0 ? ' (' + area + ')' : (parts[1] && short.indexOf(parts[1]) < 0 ? ', ' + parts[1] : '')),\n        lat: Number(h.lat), lon: Number(h.lon) };\n});\nnode.status({ fill: 'green', shape: 'dot', text: hits.length + ' Treffer' });\nreturn [{ topic: 'hits', payload: hits },\n    { payload: '✔ ' + hits.length + (hits.length === 1 ? ' Treffer' : ' Treffer') + ' für „' + msg.query +\n        '“. Sie stehen jetzt ganz oben in den Listen Start und Ziel (🔎).' }];\n",
+    "outputs": 2,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
@@ -626,13 +560,10 @@
     "libs": [],
     "wires": [
       [
-        "16a6605892faba56"
+        "570c54c4f9b4ede7"
       ],
       [
-        "3f7518d6d1c8eb14"
-      ],
-      [
-        "1ef55eb0d8e799a3"
+        "9f1be0ba4f6d86b5"
       ]
     ],
     "x": 1100,
@@ -783,7 +714,7 @@
     "id": "c0bb66e34aebe6ae",
     "type": "function",
     "name": "Wettertext",
-    "func": "// .../live/weather -> Textzeile\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst t = new Date(w.ts).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' });\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind · ' + t + (w.demo ? ' (DEMO)' : '') };\n",
+    "func": "// .../live/weather -> Textzeile\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst t = new Date(w.ts).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' });\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind · ' + t + (w.demo ? ' (Simulation)' : '') };\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -827,7 +758,7 @@
     "id": "e9a5bb38b5fe76e2",
     "type": "function",
     "name": "Demo",
-    "func": "// Demo-Schalter: löst Situationen auf Knopfdruck aus (Nachrichten NICHT retained)\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst now = Date.now();\nswitch (msg.topic) {\n    case 'rain':\n        return [[{ topic: P + '/live/weather', qos: 0, retain: false,\n            payload: { temp: 11, precip: 3.0, wind: 12, code: 65, ts: now, demo: true, source: 'demo' } }]];\n    case 'empty': {\n        const dp = flow.get('demoProfiles') || {};\n        const profiles = Object.keys(dp).filter(k => k !== '__prefix').map(k => dp[k]);\n        const ids = {};\n        profiles.forEach(p => { ids[p.from.id] = p.from.capacity || 20; });\n        return [Object.keys(ids).map(id => ({\n            topic: P + '/live/bicimad/' + id, qos: 0, retain: false,\n            payload: { bikes: 0, docks: ids[id], renting: true, returning: true, ts: now, demo: true }\n        }))];\n    }\n    case 'reset':\n        // Collectors senden beim nächsten Abruf wieder echte Werte\n        return [[\n            { topic: P + '/cmd/bicimad/refresh', payload: 'refresh', qos: 1, retain: false },\n            { topic: P + '/cmd/weather/refresh', payload: 'refresh', qos: 1, retain: false }\n        ]];\n    case 'demoroutes': {\n        // Drei Beispielrouten für den Nutzer \"demo\" (Orte mit Koordinaten, ohne Geocoding)\n        const mk = (id, name, a, b) => ({\n            topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n            payload: { name: name, from: a, to: b, createdAt: new Date().toISOString() }\n        });\n        return [[\n            mk('sol-moncloa', 'Sol → Moncloa', { label: 'Puerta del Sol', lat: 40.4169, lon: -3.7035 }, { label: 'Moncloa', lat: 40.4352, lon: -3.7190 }),\n            mk('atocha-retiro', 'Atocha → Retiro', { label: 'Estación de Atocha', lat: 40.4066, lon: -3.6892 }, { label: 'Puerta de Alcalá', lat: 40.4199, lon: -3.6887 }),\n            mk('moncloa-uni', 'Moncloa → Ciudad Universitaria', { label: 'Moncloa', lat: 40.4352, lon: -3.7190 }, { label: 'Ciudad Universitaria', lat: 40.4437, lon: -3.7276 })\n        ]];\n    }\n}\nreturn null;\n",
+    "func": "// Demo und Simulation (Seite \"System & Demo\").\n// - Demo-Routen: drei Routen für den Nutzer \"demo\", Abfahrt in 14 min (also sofort \"aktiv\")\n// - Szenarien: Kommando an den Simulator über .../sim/cmd (QoS 1, nicht retained).\n//   Der Simulator ist ein eigener Dienst (Tab \"Simulation\"); das Dashboard kennt ihn nur über MQTT.\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nif (typeof msg.topic === 'string' && msg.topic.indexOf('sim:') === 0) {\n    return [[{ topic: P + '/sim/cmd', payload: { scenario: msg.topic.slice(4), by: 'dashboard' }, qos: 1, retain: false }]];\n}\nif (msg.topic === 'demoroutes') {\n    // Abfahrt = jetzt + 14 min (Uhrzeit in Madrid), jeden Tag\n    const parts = {};\n    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false })\n        .formatToParts(new Date(Date.now() + 14 * 60000)).forEach(p => { parts[p.type] = p.value; });\n    const time = String(Number(parts.hour) % 24).padStart(2, '0') + ':' + parts.minute;\n    const pl = id => (cfg.places || []).find(p => p.id === id);\n    const pt = id => { const p = pl(id); return { label: p.label, lat: p.lat, lon: p.lon }; };\n    const mk = (id, name, a, b) => ({\n        topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n        payload: { name: name, from: pt(a), to: pt(b), departure: { time: time, days: [1, 2, 3, 4, 5, 6, 7] },\n            createdAt: new Date().toISOString() }\n    });\n    return [[\n        mk('sol-moncloa', 'Sol → Moncloa', 'sol', 'moncloa'),\n        mk('atocha-retiro', 'Atocha → Retiro', 'atocha', 'retiro'),\n        mk('moncloa-uni', 'Moncloa → Ciudad Universitaria', 'moncloa', 'ciudad-uni')\n    ]];\n}\nreturn null;\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -846,8 +777,8 @@
   {
     "id": "d31f3a03d5381bac",
     "type": "ui-button",
-    "name": "Demo-Routen anlegen (Nutzer \"demo\")",
-    "label": "Demo-Routen anlegen (Nutzer \"demo\")",
+    "name": "Demo-Routen anlegen (Nutzer \"demo\", Abfahrt in 14 min)",
+    "label": "Demo-Routen anlegen (Nutzer \"demo\", Abfahrt in 14 min)",
     "tooltip": "",
     "emulateClick": false,
     "color": "",
@@ -878,15 +809,15 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 380,
-    "y": 910,
+    "x": 760,
+    "y": 720,
     "z": "cf931b46039477f7"
   },
   {
     "id": "bf3423bdc0536e51",
     "type": "ui-button",
-    "name": "Starkregen simulieren",
-    "label": "Starkregen simulieren",
+    "name": "Regenschauer",
+    "label": "Regenschauer",
     "tooltip": "",
     "emulateClick": false,
     "color": "",
@@ -895,46 +826,7 @@
     "iconPosition": "left",
     "payload": "",
     "payloadType": "str",
-    "topic": "rain",
-    "topicType": "str",
-    "buttonColor": "",
-    "textColor": "",
-    "iconColor": "",
-    "enableClick": true,
-    "enablePointerdown": false,
-    "pointerdownPayload": "",
-    "pointerdownPayloadType": "str",
-    "enablePointerup": false,
-    "pointerupPayload": "",
-    "pointerupPayloadType": "str",
-    "wires": [
-      [
-        "e9a5bb38b5fe76e2"
-      ]
-    ],
-    "group": "6d5459b008feb016",
-    "order": 2,
-    "width": "6",
-    "height": "1",
-    "className": "",
-    "x": 380,
-    "y": 950,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "6dd75f5efb11b9af",
-    "type": "ui-button",
-    "name": "Startstationen leer simulieren",
-    "label": "Startstationen leer simulieren",
-    "tooltip": "",
-    "emulateClick": false,
-    "color": "",
-    "bgcolor": "",
-    "icon": "bicycle",
-    "iconPosition": "left",
-    "payload": "",
-    "payloadType": "str",
-    "topic": "empty",
+    "topic": "sim:regen",
     "topicType": "str",
     "buttonColor": "",
     "textColor": "",
@@ -956,24 +848,24 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 380,
-    "y": 990,
+    "x": 760,
+    "y": 800,
     "z": "cf931b46039477f7"
   },
   {
-    "id": "5225e8208190205d",
+    "id": "6dd75f5efb11b9af",
     "type": "ui-button",
-    "name": "Demo beenden (echte Daten neu laden)",
-    "label": "Demo beenden (echte Daten neu laden)",
+    "name": "Startstation leert sich",
+    "label": "Startstation leert sich",
     "tooltip": "",
     "emulateClick": false,
     "color": "",
     "bgcolor": "",
-    "icon": "refresh",
+    "icon": "bicycle",
     "iconPosition": "left",
     "payload": "",
     "payloadType": "str",
-    "topic": "reset",
+    "topic": "sim:station-leer",
     "topicType": "str",
     "buttonColor": "",
     "textColor": "",
@@ -995,8 +887,47 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 380,
-    "y": 1030,
+    "x": 760,
+    "y": 840,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "5225e8208190205d",
+    "type": "ui-button",
+    "name": "Simulation beenden (echte Daten)",
+    "label": "Simulation beenden (echte Daten)",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "stop",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "sim:stop",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 8,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 760,
+    "y": 1000,
     "z": "cf931b46039477f7"
   },
   {
@@ -1039,45 +970,6 @@
     "wires": [],
     "x": 840,
     "y": 960,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "a9fe39212f79725e",
-    "type": "mqtt in",
-    "name": "Profile (für Demo)",
-    "topic": "upm-dsiot-g6/move/profiles/+/+",
-    "qos": "1",
-    "datatype": "auto-detect",
-    "broker": "371a175cdaa0c57c",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "wires": [
-      [
-        "e9aecbc526794005"
-      ]
-    ],
-    "x": 140,
-    "y": 1120,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "e9aecbc526794005",
-    "type": "function",
-    "name": "Profile merken",
-    "func": "// Merkt sich die Profile, damit der Demo-Schalter die Startstationen kennt\nconst cfg = global.get('cfg');\nlet profiles = flow.get('demoProfiles');\nif (!profiles || profiles.__prefix !== cfg.prefix) profiles = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nif (typeof msg.payload === 'object' && msg.payload) profiles[key] = msg.payload;\nelse delete profiles[key];\nflow.set('demoProfiles', profiles);\nreturn null;\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "wires": [
-      []
-    ],
-    "x": 380,
-    "y": 1120,
     "z": "cf931b46039477f7"
   },
   {
@@ -1262,25 +1154,11 @@
   {
     "id": "b3714cda0f816020",
     "type": "ui-group",
-    "name": "Meine Route",
+    "name": "Meine Routen",
     "page": "6d17725ddcd9ce96",
     "width": "12",
     "height": "1",
     "order": 1,
-    "showTitle": true,
-    "className": "",
-    "visible": "true",
-    "disabled": "false",
-    "groupType": "default"
-  },
-  {
-    "id": "ecc9c7ceed7e0af6",
-    "type": "ui-group",
-    "name": "Alle Routen im Überblick",
-    "page": "6d17725ddcd9ce96",
-    "width": "12",
-    "height": "1",
-    "order": 2,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -1308,7 +1186,7 @@
     "page": "494ef9dd12244e66",
     "width": "6",
     "height": "1",
-    "order": 2,
+    "order": 3,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -1346,7 +1224,7 @@
   {
     "id": "6d5459b008feb016",
     "type": "ui-group",
-    "name": "Demo-Schalter",
+    "name": "Demo & Simulation",
     "page": "a27978ccd7d7ec45",
     "width": "6",
     "height": "1",
@@ -1356,5 +1234,601 @@
     "visible": "true",
     "disabled": "false",
     "groupType": "default"
+  },
+  {
+    "id": "443e69502ba24116",
+    "type": "ui-dropdown",
+    "name": "Start (Ort wählen oder tippen)",
+    "label": "Start (Ort wählen oder tippen)",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": false,
+    "chips": false,
+    "clearable": false,
+    "options": [
+      {
+        "label": "(lädt …)",
+        "value": ""
+      }
+    ],
+    "payload": "",
+    "topic": "from",
+    "topicType": "str",
+    "typeIsComboBox": true,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 370,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a017228ebfe6c8bd",
+    "type": "ui-dropdown",
+    "name": "Ziel (Ort wählen oder tippen)",
+    "label": "Ziel (Ort wählen oder tippen)",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": false,
+    "chips": false,
+    "clearable": false,
+    "options": [
+      {
+        "label": "(lädt …)",
+        "value": ""
+      }
+    ],
+    "payload": "",
+    "topic": "to",
+    "topicType": "str",
+    "typeIsComboBox": true,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 410,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "db13902a3043a40d",
+    "type": "ui-text-input",
+    "name": "Abfahrtszeit",
+    "label": "Abfahrtszeit",
+    "topic": "time",
+    "topicType": "str",
+    "mode": "time",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 5,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 330,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "64b690b6e5d8c646",
+    "type": "ui-dropdown",
+    "name": "Wochentage",
+    "label": "Wochentage",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": true,
+    "chips": true,
+    "clearable": false,
+    "options": [
+      {
+        "label": "Mo",
+        "value": 1
+      },
+      {
+        "label": "Di",
+        "value": 2
+      },
+      {
+        "label": "Mi",
+        "value": 3
+      },
+      {
+        "label": "Do",
+        "value": 4
+      },
+      {
+        "label": "Fr",
+        "value": 5
+      },
+      {
+        "label": "Sa",
+        "value": 6
+      },
+      {
+        "label": "So",
+        "value": 7
+      }
+    ],
+    "payload": "",
+    "topic": "days",
+    "topicType": "str",
+    "typeIsComboBox": false,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 6,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 290,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "39117029fcc93f1a",
+    "type": "ui-group",
+    "name": "Adresse suchen",
+    "page": "494ef9dd12244e66",
+    "width": "6",
+    "height": "1",
+    "order": 2,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "0319d918ecb9b0ba",
+    "type": "ui-text-input",
+    "name": "Adresse, z. B. Calle de Alcalá 50",
+    "label": "Adresse, z. B. Calle de Alcalá 50",
+    "topic": "query",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "16a6605892faba56"
+      ]
+    ],
+    "group": "39117029fcc93f1a",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 120,
+    "y": 580,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "d7f67e7f4fa32008",
+    "type": "ui-button",
+    "name": "Suchen",
+    "label": "Suchen",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "magnify",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "search",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "16a6605892faba56"
+      ]
+    ],
+    "group": "39117029fcc93f1a",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 120,
+    "y": 620,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "9f1be0ba4f6d86b5",
+    "type": "ui-text",
+    "name": "Suchstatus",
+    "label": "",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "39117029fcc93f1a",
+    "order": 3,
+    "width": "6",
+    "height": "0",
+    "className": "",
+    "x": 1300,
+    "y": 600,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "d5ae0d090b8a38b0",
+    "type": "mqtt in",
+    "z": "cf931b46039477f7",
+    "name": "feste Orte",
+    "topic": "upm-dsiot-g6/move/static/places",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 120,
+    "y": 660,
+    "wires": [
+      [
+        "570c54c4f9b4ede7"
+      ]
+    ]
+  },
+  {
+    "id": "570c54c4f9b4ede7",
+    "type": "function",
+    "z": "cf931b46039477f7",
+    "name": "Ortsliste bauen",
+    "func": "// Baut die Auswahllisten für Start und Ziel:\n//   🔎 Suchtreffer der letzten Adresssuche (oben)\n//   feste Orte aus .../static/places (retained), nach Kategorie sortiert\n// Die Listen sind \"Comboboxen\": man kann tippen, um zu filtern.\n// placeIndex merkt sich zu jedem Eintrag Name und Koordinaten (für das Formular).\nconst cfg = global.get('cfg');\nif (msg.topic === 'hits') {\n    flow.set('hits', msg.payload);\n} else if (typeof msg.topic === 'string' && msg.topic.endsWith('/static/places')) {\n    flow.set('places', Array.isArray(msg.payload) ? msg.payload : []);\n}\nconst hits = flow.get('hits') || [];\nconst places = flow.get('places') || [];\nconst order = { Uni: 1, Bahnhof: 2, Zentrum: 3 };\nconst index = {};\nconst options = [];\nfor (const h of hits) {\n    index[h.value] = { label: h.label, lat: h.lat, lon: h.lon };\n    options.push({ label: '🔎 ' + h.label, value: h.value });\n}\nplaces.slice().sort((a, b) => (order[a.cat] || 9) - (order[b.cat] || 9) || a.label.localeCompare(b.label, 'es'))\n    .forEach(p => {\n        const v = 'place:' + p.id;\n        index[v] = { label: p.label, lat: p.lat, lon: p.lon };\n        options.push({ label: p.label + ' · ' + p.cat, value: v });\n    });\nflow.set('placeIndex', index);\nnode.status({ fill: 'green', shape: 'dot', text: places.length + ' Orte, ' + hits.length + ' Suchtreffer' });\nreturn { ui_update: { options: options.length ? options : [{ label: '(lädt …)', value: '' }] } };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 360,
+    "y": 660,
+    "wires": [
+      [
+        "443e69502ba24116",
+        "a017228ebfe6c8bd"
+      ]
+    ]
+  },
+  {
+    "id": "4622f9765decfab5",
+    "type": "inject",
+    "z": "cf931b46039477f7",
+    "name": "Vorgaben beim Start",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "x": 140,
+    "y": 250,
+    "wires": [
+      [
+        "a9c502e68d9ef9cb"
+      ]
+    ]
+  },
+  {
+    "id": "a9c502e68d9ef9cb",
+    "type": "function",
+    "z": "cf931b46039477f7",
+    "name": "Formular-Vorgaben",
+    "func": "// Beim Start: Vorgaben ins Formular schreiben (Abfahrt 08:30, Mo–Fr)\nconst f = flow.get('form') || {};\nf.time = f.time || '08:30';\nf.days = (f.days && f.days.length) ? f.days : [1, 2, 3, 4, 5];\nflow.set('form', f);\nreturn [{ payload: f.time }, { payload: f.days }];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 160,
+    "y": 290,
+    "wires": [
+      [
+        "db13902a3043a40d"
+      ],
+      [
+        "64b690b6e5d8c646"
+      ]
+    ]
+  },
+  {
+    "id": "3571b3e264db9f2c",
+    "type": "ui-group",
+    "name": "Alle Routen (Tabelle)",
+    "page": "a27978ccd7d7ec45",
+    "width": "12",
+    "height": "1",
+    "order": 4,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "d02d7f0257c0d1e2",
+    "type": "ui-button",
+    "name": "Demo-Ablauf starten (3 min)",
+    "label": "Demo-Ablauf starten (3 min)",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "play",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "sim:demo",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 760,
+    "y": 760,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "8bb1c4e89dc2ed2e",
+    "type": "ui-button",
+    "name": "Hitzetag (38 °C)",
+    "label": "Hitzetag (38 °C)",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "weather-sunny",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "sim:hitze",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 5,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 760,
+    "y": 880,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "c48d3730022bd7d3",
+    "type": "ui-button",
+    "name": "Sturm (48 km/h)",
+    "label": "Sturm (48 km/h)",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "weather-windy",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "sim:sturm",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 6,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 760,
+    "y": 920,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "3f02c38a532e975d",
+    "type": "ui-button",
+    "name": "Normaler Werktag",
+    "label": "Normaler Werktag",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "weather-partly-cloudy",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "sim:normal",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 7,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 760,
+    "y": 960,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "8dcacaebc1ed0b73",
+    "type": "ui-text",
+    "name": "Simulation",
+    "label": "",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "6d5459b008feb016",
+    "order": 9,
+    "width": "6",
+    "height": "0",
+    "className": "",
+    "x": 1300,
+    "y": 1060,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "08794a3b9693d029",
+    "type": "mqtt in",
+    "z": "cf931b46039477f7",
+    "name": "Simulationsstatus",
+    "topic": "upm-dsiot-g6/move/sim/state",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 760,
+    "y": 1060,
+    "wires": [
+      [
+        "c3dab4d5f775b4c9"
+      ]
+    ]
+  },
+  {
+    "id": "c3dab4d5f775b4c9",
+    "type": "function",
+    "z": "cf931b46039477f7",
+    "name": "Simulationsstatus",
+    "func": "// .../sim/state (retained) -> Textzeile auf der Seite \"System & Demo\"\nconst s = msg.payload;\nif (!s || typeof s !== 'object' || !s.active) return { payload: 'Keine Simulation aktiv: es laufen echte Daten.' };\nconst since = new Date(s.startedAt).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nreturn { payload: '▶ ' + s.label + ' (seit ' + since + ')' + (s.phase ? ' · ' + s.phase : '') +\n    (s.stations ? ' · ' + s.stations + ' Stationen simuliert' : '') };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1020,
+    "y": 1060,
+    "wires": [
+      [
+        "8dcacaebc1ed0b73"
+      ]
+    ]
   }
 ]

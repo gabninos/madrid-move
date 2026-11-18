@@ -248,7 +248,7 @@
     "id": "dfd0122473f613a3",
     "type": "function",
     "name": "Status publizieren",
-    "func": "// station_status -> ein Topic pro Station: .../live/bicimad/<station-id>\n// \"Report by Exception\": nur Stationen, deren Werte sich geändert haben,\n// werden gesendet, spätestens aber alle 10 min (damit Empfänger frische\n// Zeitstempel sehen und veraltete Daten erkennen können).\nconst cfg = global.get('cfg');\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'HTTP ' + msg.statusCode });\n    return null;\n}\nconst REFRESH_MS = 10 * 60 * 1000;\nconst list = (msg.payload.data && msg.payload.data.stations) || [];\nlet last = flow.get('lastSent');\n// Gedächtnis verwerfen, wenn sich das Präfix geändert hat (Context überlebt einen Deploy)\nif (!last || last.__prefix !== cfg.prefix) last = { __prefix: cfg.prefix };\nconst now = Date.now();\nconst out = [];\nfor (const s of list) {\n    const id = String(s.station_id);\n    const v = {\n        bikes: s.num_bikes_available,\n        docks: s.num_docks_available,\n        renting: !(s.is_renting === 0 || s.is_renting === false),\n        returning: !(s.is_returning === 0 || s.is_returning === false)\n    };\n    const key = [v.bikes, v.docks, v.renting, v.returning].join('/');\n    const prev = last[id];\n    if (prev && prev.key === key && now - prev.t < REFRESH_MS) continue;\n    last[id] = { key: key, t: now };\n    v.ts = now;\n    out.push({ topic: cfg.prefix + '/live/bicimad/' + id, payload: v, qos: 0, retain: true });\n}\nflow.set('lastSent', last);\n// Heartbeat: bei jedem erfolgreichen Abruf \"online\" bestätigen (retained). Korrigiert\n// einen veralteten Status, falls der Broker eine alte Last-Will-Nachricht nachliefert.\n// Stürzt der Collector ab, bleibt der Heartbeat aus und der Last Will greift.\nout.push({ topic: cfg.prefix + '/system/bicimad', payload: 'online', qos: 1, retain: true });\nnode.status({ fill: 'green', shape: 'dot',\n    text: out.length + '/' + list.length + ' gesendet, ' + new Date().toLocaleTimeString('de-DE') });\nreturn [out];\n",
+    "func": "// station_status -> ein Topic pro Station: .../live/bicimad/<station-id>\n// \"Report by Exception\": nur Stationen, deren Werte sich geändert haben,\n// werden gesendet, spätestens aber alle 10 min (damit Empfänger frische\n// Zeitstempel sehen und veraltete Daten erkennen können).\nconst cfg = global.get('cfg');\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'HTTP ' + msg.statusCode });\n    return null;\n}\nconst REFRESH_MS = 10 * 60 * 1000;\nconst list = (msg.payload.data && msg.payload.data.stations) || [];\n// Läuft gerade eine Simulation (.../sim/state), schickt der Collector keine Live-Werte,\n// sondern nur seinen Heartbeat. Danach sendet er auf Kommando wieder alles (refresh).\nif (flow.get('simActive')) {\n    node.status({ fill: 'blue', shape: 'ring', text: 'Simulation aktiv: Live-Werte pausiert' });\n    return [[{ topic: cfg.prefix + '/system/bicimad', payload: 'online', qos: 1, retain: true }]];\n}\nlet last = flow.get('lastSent');\n// Gedächtnis verwerfen, wenn sich das Präfix geändert hat (Context überlebt einen Deploy)\nif (!last || last.__prefix !== cfg.prefix) last = { __prefix: cfg.prefix };\nconst now = Date.now();\nconst out = [];\nfor (const s of list) {\n    const id = String(s.station_id);\n    const v = {\n        bikes: s.num_bikes_available,\n        docks: s.num_docks_available,\n        renting: !(s.is_renting === 0 || s.is_renting === false),\n        returning: !(s.is_returning === 0 || s.is_returning === false)\n    };\n    const key = [v.bikes, v.docks, v.renting, v.returning].join('/');\n    const prev = last[id];\n    if (prev && prev.key === key && now - prev.t < REFRESH_MS) continue;\n    last[id] = { key: key, t: now };\n    v.ts = now;\n    out.push({ topic: cfg.prefix + '/live/bicimad/' + id, payload: v, qos: 0, retain: true });\n}\nflow.set('lastSent', last);\n// Heartbeat: bei jedem erfolgreichen Abruf \"online\" bestätigen (retained). Korrigiert\n// einen veralteten Status, falls der Broker eine alte Last-Will-Nachricht nachliefert.\n// Stürzt der Collector ab, bleibt der Heartbeat aus und der Last Will greift.\nout.push({ topic: cfg.prefix + '/system/bicimad', payload: 'online', qos: 1, retain: true });\nnode.status({ fill: 'green', shape: 'dot',\n    text: out.length + '/' + list.length + ' gesendet, ' + new Date().toLocaleTimeString('de-DE') });\nreturn [out];\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -385,7 +385,7 @@
     "id": "308b77771730aa5c",
     "type": "function",
     "name": "Wetter publizieren",
-    "func": "// Open-Meteo-Antwort -> .../live/weather (retained)\nconst cfg = global.get('cfg');\nconst c = msg.statusCode === 200 && msg.payload && msg.payload.current;\nif (!c) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Wetter: HTTP ' + msg.statusCode });\n    node.warn({ hinweis: 'Unerwartete Open-Meteo-Antwort', payload: msg.payload });\n    return null;\n}\nconst w = {\n    temp: c.temperature_2m,      // °C\n    precip: c.precipitation,     // mm (letzte 15 min)\n    wind: c.wind_speed_10m,      // km/h\n    code: c.weather_code,        // WMO-Wettercode\n    ts: Date.now(),\n    source: 'open-meteo'\n};\nnode.status({ fill: 'green', shape: 'dot', text: w.temp + ' °C, ' + w.precip + ' mm, ' + w.wind + ' km/h' });\n// Heartbeat (siehe Collector BiciMAD): Status \"online\" bei jedem erfolgreichen Abruf\nreturn [[\n    { topic: cfg.prefix + '/live/weather', payload: w, qos: 0, retain: true },\n    { topic: cfg.prefix + '/system/weather', payload: 'online', qos: 1, retain: true }\n]];\n",
+    "func": "// Open-Meteo-Antwort -> .../live/weather (retained)\nconst cfg = global.get('cfg');\nconst c = msg.statusCode === 200 && msg.payload && msg.payload.current;\nif (!c) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Wetter: HTTP ' + msg.statusCode });\n    node.warn({ hinweis: 'Unerwartete Open-Meteo-Antwort', payload: msg.payload });\n    return null;\n}\n// Während einer Simulation nur Heartbeat, keine echten Wetterwerte (siehe Status publizieren)\nif (flow.get('simActive')) {\n    node.status({ fill: 'blue', shape: 'ring', text: 'Simulation aktiv: Wetter pausiert' });\n    return [[{ topic: cfg.prefix + '/system/weather', payload: 'online', qos: 1, retain: true }]];\n}\nconst w = {\n    temp: c.temperature_2m,      // °C\n    precip: c.precipitation,     // mm (letzte 15 min)\n    wind: c.wind_speed_10m,      // km/h\n    code: c.weather_code,        // WMO-Wettercode\n    ts: Date.now(),\n    source: 'open-meteo'\n};\nnode.status({ fill: 'green', shape: 'dot', text: w.temp + ' °C, ' + w.precip + ' mm, ' + w.wind + ' km/h' });\n// Heartbeat (siehe Collector BiciMAD): Status \"online\" bei jedem erfolgreichen Abruf\nreturn [[\n    { topic: cfg.prefix + '/live/weather', payload: w, qos: 0, retain: true },\n    { topic: cfg.prefix + '/system/weather', payload: 'online', qos: 1, retain: true }\n]];\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -519,5 +519,52 @@
         "dfadcb8dfe38ede2"
       ]
     ]
+  },
+  {
+    "id": "18578a48a6795fb9",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "Simulation aktiv? Dann Live-Werte pausieren (…/sim/state)",
+    "info": "",
+    "x": 220,
+    "y": 600,
+    "wires": []
+  },
+  {
+    "id": "bb59223164fb7299",
+    "type": "mqtt in",
+    "z": "41cdb26069d4ff9b",
+    "name": "Simulation",
+    "topic": "upm-dsiot-g6/move/sim/state",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 130,
+    "y": 640,
+    "wires": [
+      [
+        "c5dc224d876e6340"
+      ]
+    ]
+  },
+  {
+    "id": "c5dc224d876e6340",
+    "type": "function",
+    "z": "41cdb26069d4ff9b",
+    "name": "Simulation merken",
+    "func": "// .../sim/state (retained): Läuft gerade eine Simulation?\n// Dann pausieren die Collectors ihre Live-Werte, damit sich echte und simulierte\n// Daten nicht abwechseln. Endet die Simulation, schickt der Simulator ein refresh-Kommando.\nconst s = msg.payload;\nconst active = !!(s && typeof s === 'object' && s.active);\nflow.set('simActive', active);\nnode.status(active\n    ? { fill: 'blue', shape: 'dot', text: 'Simulation: ' + (s.label || s.scenario) }\n    : { fill: 'grey', shape: 'ring', text: 'keine Simulation' });\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 330,
+    "y": 640,
+    "wires": []
   }
 ]
