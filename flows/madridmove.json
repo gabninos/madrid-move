@@ -1,0 +1,2504 @@
+[
+  {
+    "id": "834af59d0d1345e8",
+    "type": "tab",
+    "label": "⚙ Konfiguration",
+    "disabled": false,
+    "info": "Zentrale Konfiguration: alle API-URLs, der ORS-Schlüssel (per Umgebungsvariable) und alle Schwellwerte der Empfehlungslogik stehen in der Function **Konfiguration** (Reiter *Beim Start*)."
+  },
+  {
+    "id": "41cdb26069d4ff9b",
+    "type": "tab",
+    "label": "Collector",
+    "disabled": false,
+    "info": "Rolle A. Holt Live-Daten (BiciMAD, Wetter) und veröffentlicht sie per MQTT. Jeder Collector hat eine **eigene Broker-Verbindung** mit Birth-, Close- und Last-Will-Nachricht auf `.../system/<collector>`."
+  },
+  {
+    "id": "d0758e3c8908c3f2",
+    "type": "tab",
+    "label": "Profil-Dienst",
+    "disabled": false,
+    "info": "Rolle B. Abonniert `.../routes/+/+`. Für jede neue Route wird EINMAL ein Streckenprofil berechnet (openrouteservice: Länge, Dauer, Höhenmeter, Radweganteil; ohne Schlüssel: Schätzung) und retained auf `.../profiles/<nutzer>/<route>` veröffentlicht."
+  },
+  {
+    "id": "c74bf7aebad4c5d0",
+    "type": "tab",
+    "label": "Empfehlung",
+    "disabled": false,
+    "info": "Rolle A. Kombiniert Streckenprofile, BiciMAD-Live-Daten, Wetter und Collector-Status zu einer Empfehlung pro Route (`.../reco/<nutzer>/<route>`). Wechselt die Empfehlung, geht eine Warnung auf `.../alerts/<nutzer>` (QoS 1)."
+  },
+  {
+    "id": "cf931b46039477f7",
+    "type": "tab",
+    "label": "Dashboard",
+    "disabled": false,
+    "info": "Rolle B. Dashboard 2.0 unter http://localhost:1880/dashboard mit drei Seiten: Empfehlungen, Routen verwalten, System & Demo."
+  },
+  {
+    "id": "45bdfcb6d12255f2",
+    "type": "mqtt-broker",
+    "name": "g6-tobias-col-bicimad",
+    "broker": "broker.hivemq.com",
+    "port": 1883,
+    "clientid": "g6-tobias-col-bicimad",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": 4,
+    "keepalive": 30,
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "upm-dsiot-g6-tobias/move/system/bicimad",
+    "birthQos": "1",
+    "birthRetain": "true",
+    "birthPayload": "online",
+    "birthMsg": {},
+    "closeTopic": "upm-dsiot-g6-tobias/move/system/bicimad",
+    "closeQos": "1",
+    "closeRetain": "true",
+    "closePayload": "offline (beendet)",
+    "closeMsg": {},
+    "willTopic": "upm-dsiot-g6-tobias/move/system/bicimad",
+    "willQos": "1",
+    "willRetain": "true",
+    "willPayload": "offline (Absturz)",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "eaac539f34213b39",
+    "type": "mqtt-broker",
+    "name": "g6-tobias-col-weather",
+    "broker": "broker.hivemq.com",
+    "port": 1883,
+    "clientid": "g6-tobias-col-weather",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": 4,
+    "keepalive": 30,
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "upm-dsiot-g6-tobias/move/system/weather",
+    "birthQos": "1",
+    "birthRetain": "true",
+    "birthPayload": "online",
+    "birthMsg": {},
+    "closeTopic": "upm-dsiot-g6-tobias/move/system/weather",
+    "closeQos": "1",
+    "closeRetain": "true",
+    "closePayload": "offline (beendet)",
+    "closeMsg": {},
+    "willTopic": "upm-dsiot-g6-tobias/move/system/weather",
+    "willQos": "1",
+    "willRetain": "true",
+    "willPayload": "offline (Absturz)",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "371a175cdaa0c57c",
+    "type": "mqtt-broker",
+    "name": "g6-tobias-app",
+    "broker": "broker.hivemq.com",
+    "port": 1883,
+    "clientid": "g6-tobias-app",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": 4,
+    "keepalive": 30,
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthRetain": "false",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closeRetain": "false",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willRetain": "false",
+    "willPayload": "",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "e69465b5990fcce1",
+    "type": "comment",
+    "z": "834af59d0d1345e8",
+    "name": "Konfiguration: Function öffnen → Reiter \"Beim Start\"",
+    "info": "Hier stehen alle externen APIs und Parameter.\n\nWerte per Umgebungsvariable überschreiben: `ORS_API_KEY`, `GBFS_URL`, `METEO_URL`, `ORS_URL`.\n\nDer Inject zeigt die aktive Konfiguration im Debug-Fenster.",
+    "x": 220,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "d6e9d04da12e7685",
+    "type": "inject",
+    "name": "Konfiguration anzeigen",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 1,
+    "topic": "",
+    "wires": [
+      [
+        "91be756d312bee56"
+      ]
+    ],
+    "x": 140,
+    "y": 100,
+    "z": "834af59d0d1345e8"
+  },
+  {
+    "id": "91be756d312bee56",
+    "type": "function",
+    "name": "Konfiguration",
+    "func": "// Zeigt die aktive Konfiguration im Debug-Fenster (Schlüssel maskiert)\nconst cfg = JSON.parse(JSON.stringify(global.get('cfg')));\nif (cfg.apis.orsKey) cfg.apis.orsKey = cfg.apis.orsKey.slice(0, 4) + '…';\nmsg.payload = cfg;\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "// ============================================================\n//  MadridMove – zentrale Konfiguration\n//  Alle externen APIs und alle Schwellwerte stehen NUR hier.\n//  Jeder Wert kann per Umgebungsvariable überschrieben werden,\n//  z. B. ORS_API_KEY=abc node-red   bzw.   docker run -e ORS_API_KEY=abc ...\n// ============================================================\nconst cfg = {\n    // Topic-Präfix: wird von configure.py gesetzt, nicht von Hand ändern\n    prefix: 'upm-dsiot-g6-tobias/move',\n\n    apis: {\n        // BiciMAD (GBFS-Einstiegsdatei; die Feed-URLs werden daraus gelesen)\n        gbfs: env.get('GBFS_URL') || 'https://madrid.publicbikesystem.net/customer/gbfs/v2/gbfs.json',\n        // Open-Meteo (Wetter, ohne Schlüssel)\n        meteo: env.get('METEO_URL') || 'https://api.open-meteo.com/v1/forecast',\n        // openrouteservice (Routing mit Höhe und Wegart, kostenloser Schlüssel)\n        ors: env.get('ORS_URL') || 'https://api.openrouteservice.org',\n        orsKey: env.get('ORS_API_KEY') || ''\n    },\n\n    // Wetterpunkt: Puerta del Sol\n    weatherPoint: { lat: 40.4168, lon: -3.7038 },\n\n    // Parameter der Empfehlungslogik (Minuten, km/h, mm, °C)\n    reco: {\n        bikeMinBikes: 1,        // mind. so viele Räder am Start\n        bikeMinDocks: 1,        // mind. so viele freie Plätze am Ziel\n        dockMin: 2,             // Ausleihen + Abstellen\n        minPerHmUp: 0.15,       // Aufschlag pro Höhenmeter bergauf (9 s)\n        cyclewayBonusMax: 3,    // Bonus bei 100 % Radweg\n        rainLight: 0.1,         // mm Niederschlag (letzte 15 min) = leichter Regen\n        rainHeavy: 1.0,         // mm = starker Regen\n        rainPenaltyBike: 8,\n        rainPenaltyWalk: 5,\n        windStrong: 30,         // km/h\n        windPenaltyBike: 3,\n        coldBelow: 3,           // °C\n        hotAbove: 35,           // °C\n        tempPenalty: 3,\n        bikeSpeedKmh: 14,       // nur Schätzmodus (ohne ORS)\n        walkSpeedKmh: 4.8,      // nur Schätzmodus\n        detourFactor: 1.3,      // Luftlinie -> Straßenweg (Schätzmodus)\n        transitSpeedKmh: 18,    // ÖPNV-Schätzung: mittlere Reisegeschwindigkeit\n        transitAccessMin: 8,    // Fußwege zur und von der Haltestelle\n        transitWaitMin: 4,      // mittlere Wartezeit\n        staleMin: 15,           // BiciMAD-Daten älter als das = veraltet\n        weatherStaleMin: 30,    // Wetterdaten älter als das = veraltet\n        maxRoutesPerUser: 3\n    }\n};\nglobal.set('cfg', cfg);\nnode.status({\n    fill: cfg.apis.orsKey ? 'green' : 'yellow', shape: 'dot',\n    text: cfg.apis.orsKey ? 'ORS-Schlüssel gesetzt' : 'kein ORS-Schlüssel: Schätzmodus'\n});\n",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "c42f53684116e1d0"
+      ]
+    ],
+    "x": 330,
+    "y": 100,
+    "z": "834af59d0d1345e8"
+  },
+  {
+    "id": "c42f53684116e1d0",
+    "type": "debug",
+    "name": "aktive Konfiguration",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 520,
+    "y": 100,
+    "z": "834af59d0d1345e8"
+  },
+  {
+    "id": "a71c9dcb2564ad39",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "BiciMAD: Stationsliste (beim Start, dann alle 24 h)",
+    "info": "GBFS-Einstiegsdatei → Feed-URLs → `station_information` → eine Retained-Nachricht `.../static/stations`.",
+    "x": 260,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "2b082bad98168ef5",
+    "type": "inject",
+    "name": "alle 24 h",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "86400",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "wires": [
+      [
+        "7e5443edbd3ce42f"
+      ]
+    ],
+    "x": 140,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "7e5443edbd3ce42f",
+    "type": "function",
+    "name": "GBFS-URL",
+    "func": "// Startet den Abruf der GBFS-Einstiegsdatei\nconst cfg = global.get('cfg');\nreturn { url: cfg.apis.gbfs };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "d963b339f11b497f"
+      ]
+    ],
+    "x": 330,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "d963b339f11b497f",
+    "type": "http request",
+    "name": "GBFS-Einstieg",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "4af29c5874c0ba69"
+      ]
+    ],
+    "x": 520,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "4af29c5874c0ba69",
+    "type": "function",
+    "name": "Feeds finden",
+    "func": "// Liest aus der GBFS-Einstiegsdatei die URLs der benötigten Feeds\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'GBFS: HTTP ' + msg.statusCode });\n    node.warn({ hinweis: 'GBFS-Einstiegsdatei nicht lesbar', statusCode: msg.statusCode, payload: msg.payload });\n    return null;\n}\nconst data = msg.payload.data || {};\n// GBFS gruppiert Feeds nach Sprache: data.es.feeds, data.en.feeds, ...\nconst lang = data.es ? 'es' : (data.en ? 'en' : Object.keys(data)[0]);\nconst feeds = {};\nfor (const f of (data[lang] && data[lang].feeds) || []) feeds[f.name] = f.url;\nif (!feeds.station_information || !feeds.station_status) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Feeds fehlen' });\n    node.warn({ hinweis: 'station_information/station_status nicht gefunden', gefunden: Object.keys(feeds) });\n    return null;\n}\nflow.set('feeds', feeds);\nnode.status({ fill: 'green', shape: 'dot', text: 'Feeds gefunden (' + lang + ')' });\nreturn { url: feeds.station_information };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "a65961ef574af49d"
+      ]
+    ],
+    "x": 710,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "a65961ef574af49d",
+    "type": "http request",
+    "name": "station_information",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "bae57bbda69e49f1"
+      ]
+    ],
+    "x": 900,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "bae57bbda69e49f1",
+    "type": "function",
+    "name": "Stationsliste",
+    "func": "// station_information: Name, Lage, Kapazität aller Stationen.\n// Wird als EINE Retained-Nachricht veröffentlicht (Stationsliste fürs Formular\n// und für den Profil-Dienst). Ändert sich selten -> Abruf alle 24 h.\nconst cfg = global.get('cfg');\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'HTTP ' + msg.statusCode });\n    return null;\n}\nconst list = (msg.payload.data && msg.payload.data.stations) || [];\nconst out = list.map(s => ({\n    id: String(s.station_id),\n    name: s.name,\n    lat: s.lat,\n    lon: s.lon,\n    capacity: s.capacity\n}));\nout.sort((a, b) => a.name.localeCompare(b.name, 'es'));\nnode.status({ fill: 'green', shape: 'dot', text: out.length + ' Stationen' });\nreturn { topic: cfg.prefix + '/static/stations', payload: out, qos: 1, retain: true };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "56a71a94373b69ec"
+      ]
+    ],
+    "x": 1090,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "56a71a94373b69ec",
+    "type": "mqtt out",
+    "name": "g6-tobias-col-bicimad",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "45bdfcb6d12255f2",
+    "wires": [],
+    "x": 1280,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "2b921a8ea30d5121",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "BiciMAD: Status (jede Minute, nur Änderungen)",
+    "info": "Ein Topic pro Station: `.../live/bicimad/<id>`, QoS 0, retained. Gesendet wird nur bei Änderung, spätestens alle 10 min.\n\nDas Kommando `.../cmd/bicimad/refresh` (Demo-Schalter) erzwingt ein komplettes Neusenden.",
+    "x": 250,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "14cc16d89643adbe",
+    "type": "inject",
+    "name": "jede Minute",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 10,
+    "topic": "",
+    "wires": [
+      [
+        "abb79385c33df652"
+      ]
+    ],
+    "x": 140,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "abb79385c33df652",
+    "type": "function",
+    "name": "Status-URL",
+    "func": "// Startet den Abruf von station_status (jede Minute).\n// Ein Kommando auf .../cmd/bicimad/refresh leert den Cache,\n// dann werden beim nächsten Abruf ALLE Stationen neu veröffentlicht.\nif (typeof msg.topic === 'string' && msg.topic.endsWith('/cmd/bicimad/refresh')) {\n    flow.set('lastSent', {});\n    node.status({ fill: 'blue', shape: 'dot', text: 'Neu senden angefordert' });\n}\nconst feeds = flow.get('feeds');\nif (!feeds) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'warte auf Feed-URLs' });\n    return null;\n}\nreturn { url: feeds.station_status };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "d33b929ce575f33c"
+      ]
+    ],
+    "x": 330,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "d33b929ce575f33c",
+    "type": "http request",
+    "name": "station_status",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "dfd0122473f613a3"
+      ]
+    ],
+    "x": 520,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "dfd0122473f613a3",
+    "type": "function",
+    "name": "Status publizieren",
+    "func": "// station_status -> ein Topic pro Station: .../live/bicimad/<station-id>\n// \"Report by Exception\": nur Stationen, deren Werte sich geändert haben,\n// werden gesendet, spätestens aber alle 10 min (damit Empfänger frische\n// Zeitstempel sehen und veraltete Daten erkennen können).\nconst cfg = global.get('cfg');\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'HTTP ' + msg.statusCode });\n    return null;\n}\nconst REFRESH_MS = 10 * 60 * 1000;\nconst list = (msg.payload.data && msg.payload.data.stations) || [];\nconst last = flow.get('lastSent') || {};\nconst now = Date.now();\nconst out = [];\nfor (const s of list) {\n    const id = String(s.station_id);\n    const v = {\n        bikes: s.num_bikes_available,\n        docks: s.num_docks_available,\n        renting: !(s.is_renting === 0 || s.is_renting === false),\n        returning: !(s.is_returning === 0 || s.is_returning === false)\n    };\n    const key = [v.bikes, v.docks, v.renting, v.returning].join('/');\n    const prev = last[id];\n    if (prev && prev.key === key && now - prev.t < REFRESH_MS) continue;\n    last[id] = { key: key, t: now };\n    v.ts = now;\n    out.push({ topic: cfg.prefix + '/live/bicimad/' + id, payload: v, qos: 0, retain: true });\n}\nflow.set('lastSent', last);\nnode.status({ fill: 'green', shape: 'dot',\n    text: out.length + '/' + list.length + ' gesendet, ' + new Date().toLocaleTimeString('de-DE') });\nreturn [out];\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "87de5ff188623b7c"
+      ]
+    ],
+    "x": 710,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "87de5ff188623b7c",
+    "type": "mqtt out",
+    "name": "g6-tobias-col-bicimad",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "45bdfcb6d12255f2",
+    "wires": [],
+    "x": 900,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "13d5aa62015907d3",
+    "type": "mqtt in",
+    "name": "Kommando: neu senden",
+    "topic": "upm-dsiot-g6-tobias/move/cmd/bicimad/refresh",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "abb79385c33df652"
+      ]
+    ],
+    "x": 140,
+    "y": 230,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "e7c2b4156733a00b",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "Wetter: Open-Meteo (alle 10 min)",
+    "info": "Eigene Broker-Verbindung `g6-tobias-col-weather` mit eigenem Last Will.",
+    "x": 210,
+    "y": 290,
+    "wires": []
+  },
+  {
+    "id": "79fa0c447bf1fef7",
+    "type": "inject",
+    "name": "alle 10 min",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "600",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 3,
+    "topic": "",
+    "wires": [
+      [
+        "1a56c5921bfbfcb3"
+      ]
+    ],
+    "x": 140,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "1a56c5921bfbfcb3",
+    "type": "function",
+    "name": "Wetter-URL",
+    "func": "// Open-Meteo: aktuelles Wetter am Wetterpunkt (alle 10 min oder auf Kommando)\nconst cfg = global.get('cfg');\nconst p = cfg.weatherPoint;\nconst url = cfg.apis.meteo +\n    '?latitude=' + p.lat + '&longitude=' + p.lon +\n    '&current=temperature_2m,precipitation,wind_speed_10m,weather_code' +\n    '&timezone=Europe%2FMadrid';\nreturn { url: url };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "7f501a4c6ea84ee9"
+      ]
+    ],
+    "x": 330,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "7f501a4c6ea84ee9",
+    "type": "http request",
+    "name": "Open-Meteo",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "308b77771730aa5c"
+      ]
+    ],
+    "x": 520,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "308b77771730aa5c",
+    "type": "function",
+    "name": "Wetter publizieren",
+    "func": "// Open-Meteo-Antwort -> .../live/weather (retained)\nconst cfg = global.get('cfg');\nconst c = msg.statusCode === 200 && msg.payload && msg.payload.current;\nif (!c) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Wetter: HTTP ' + msg.statusCode });\n    node.warn({ hinweis: 'Unerwartete Open-Meteo-Antwort', payload: msg.payload });\n    return null;\n}\nconst w = {\n    temp: c.temperature_2m,      // °C\n    precip: c.precipitation,     // mm (letzte 15 min)\n    wind: c.wind_speed_10m,      // km/h\n    code: c.weather_code,        // WMO-Wettercode\n    ts: Date.now(),\n    source: 'open-meteo'\n};\nnode.status({ fill: 'green', shape: 'dot', text: w.temp + ' °C, ' + w.precip + ' mm, ' + w.wind + ' km/h' });\nreturn { topic: cfg.prefix + '/live/weather', payload: w, qos: 0, retain: true };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "93fe14d03e539cd0"
+      ]
+    ],
+    "x": 710,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "93fe14d03e539cd0",
+    "type": "mqtt out",
+    "name": "g6-tobias-col-weather",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "eaac539f34213b39",
+    "wires": [],
+    "x": 900,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "3549201be00c0a3c",
+    "type": "mqtt in",
+    "name": "Kommando: neu laden",
+    "topic": "upm-dsiot-g6-tobias/move/cmd/weather/refresh",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "1a56c5921bfbfcb3"
+      ]
+    ],
+    "x": 140,
+    "y": 380,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "74bf1091faecee72",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "Test-Subscriber (Wildcard #)",
+    "info": "Zeigt alle Live-Daten. Zum Testen den Debug-Node aktivieren.",
+    "x": 230,
+    "y": 440,
+    "wires": []
+  },
+  {
+    "id": "a97759565e4ffb26",
+    "type": "mqtt in",
+    "name": "Test: alle Live-Daten",
+    "topic": "upm-dsiot-g6-tobias/move/live/#",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "e511441bca2b6cbd"
+      ]
+    ],
+    "x": 160,
+    "y": 480,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "e511441bca2b6cbd",
+    "type": "debug",
+    "name": "Live-Daten",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 400,
+    "y": 480,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "dfadcb8dfe38ede2",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 540,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "3407e2e6770a141a",
+    "type": "catch",
+    "z": "41cdb26069d4ff9b",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 540,
+    "wires": [
+      [
+        "dfadcb8dfe38ede2"
+      ]
+    ]
+  },
+  {
+    "id": "a769fb2f2247f36c",
+    "type": "comment",
+    "z": "d0758e3c8908c3f2",
+    "name": "Stationsliste und Profil-Cache",
+    "info": "",
+    "x": 220,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "4cb90465ada52040",
+    "type": "mqtt in",
+    "name": "Stationsliste",
+    "topic": "upm-dsiot-g6-tobias/move/static/stations",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "33a774fb5ed4ae01"
+      ]
+    ],
+    "x": 140,
+    "y": 80,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "33a774fb5ed4ae01",
+    "type": "function",
+    "name": "Stationen merken",
+    "func": "// Merkt sich die Stationsliste (.../static/stations, retained).\n// Routen, die vorher eingetroffen sind, werden jetzt nachträglich verarbeitet.\nconst list = Array.isArray(msg.payload) ? msg.payload : [];\nconst map = {};\nfor (const s of list) map[s.id] = s;\nflow.set('stations', map);\nnode.status({ fill: 'green', shape: 'dot', text: list.length + ' Stationen bekannt' });\nconst pending = flow.get('pending') || {};\nflow.set('pending', {});\nreturn [Object.values(pending)];\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "f633caa61b5c5d68"
+      ]
+    ],
+    "x": 330,
+    "y": 80,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "367f42a1060eac48",
+    "type": "mqtt in",
+    "name": "vorhandene Profile",
+    "topic": "upm-dsiot-g6-tobias/move/profiles/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "8dcf85bf20130941"
+      ]
+    ],
+    "x": 140,
+    "y": 130,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "8dcf85bf20130941",
+    "type": "function",
+    "name": "Profil-Cache",
+    "func": "// Merkt sich, für welche Routen schon ein Profil existiert (retained).\n// So wird nach einem Neustart nicht jede Route erneut bei ORS angefragt.\nconst cache = flow.get('profiles') || {};\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty) delete cache[key];\nelse if (typeof msg.payload === 'object') cache[key] = msg.payload.routeHash;\nflow.set('profiles', cache);\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      []
+    ],
+    "x": 330,
+    "y": 130,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "4292bdda0ecfc26b",
+    "type": "comment",
+    "z": "d0758e3c8908c3f2",
+    "name": "Routen → Profil (ORS: Fahrrad + Fußweg)",
+    "info": "Ausgang 1: Route gelöscht → Profil löschen\n\nAusgang 2: ORS-Anfragen (gedrosselt auf 1 alle 2 s wegen API-Limit)\n\nAusgang 3: kein ORS-Schlüssel → Schätzung",
+    "x": 260,
+    "y": 190,
+    "wires": []
+  },
+  {
+    "id": "67ee2b9e77727624",
+    "type": "mqtt in",
+    "name": "Routen",
+    "topic": "upm-dsiot-g6-tobias/move/routes/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "f633caa61b5c5d68"
+      ]
+    ],
+    "x": 140,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "f633caa61b5c5d68",
+    "type": "function",
+    "name": "Routen-Eingang",
+    "func": "// Eingang für Routen: .../routes/<nutzer>/<route-id>\n// Payload: {\"name\":\"Zur Uni\",\"from\":{\"id\":\"57\"},\"to\":{\"lat\":40.44,\"lon\":-3.72}}\n//   Start/Ziel entweder als Stations-ID oder als Koordinate (-> nächste Station)\n// Leere Retained-Nachricht = Route gelöscht -> Profil ebenfalls löschen.\n// Ausgang 1: Profil löschen | 2: ORS-Anfrage | 3: Schätzmodus (ohne ORS)\nconst cfg = global.get('cfg');\nconst parts = msg.topic.split('/');\nconst user = parts[parts.length - 2], routeId = parts[parts.length - 1];\nconst key = user + '/' + routeId;\nconst profileTopic = cfg.prefix + '/profiles/' + key;\n\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty) {\n    node.status({ fill: 'grey', shape: 'dot', text: 'gelöscht: ' + key });\n    return [{ topic: profileTopic, payload: '', qos: 1, retain: true }, null, null];\n}\nconst r = msg.payload;\nif (typeof r !== 'object' || !r.from || !r.to) {\n    node.warn('Ungültige Route auf ' + msg.topic + ': ' + JSON.stringify(r));\n    return null;\n}\nconst stations = flow.get('stations');\nif (!stations || Object.keys(stations).length === 0) {\n    const pending = flow.get('pending') || {};\n    pending[key] = msg;\n    flow.set('pending', pending);\n    node.status({ fill: 'yellow', shape: 'ring', text: 'warte auf Stationsliste' });\n    return null;\n}\n\n// Entfernung in Metern (Näherung, für Stadtentfernungen ausreichend)\nconst dist = (a, b) => {\n    const kx = 111320 * Math.cos(a.lat * Math.PI / 180), ky = 110540;\n    return Math.hypot((a.lon - b.lon) * kx, (a.lat - b.lat) * ky);\n};\nconst resolve = (p) => {\n    if (p.id != null && stations[String(p.id)]) return stations[String(p.id)];\n    if (typeof p.lat === 'number' && typeof p.lon === 'number') {\n        let best = null, bestD = Infinity;\n        for (const s of Object.values(stations)) {\n            const d = dist(p, s);\n            if (d < bestD) { bestD = d; best = s; }\n        }\n        return best;\n    }\n    return null;\n};\nconst from = resolve(r.from), to = resolve(r.to);\nif (!from || !to) {\n    node.warn('Start oder Ziel unbekannt für ' + key + ': ' + JSON.stringify(r));\n    return null;\n}\nif (from.id === to.id) {\n    node.warn('Start und Ziel sind dieselbe Station (' + from.name + ') für ' + key);\n    return null;\n}\n\nconst source = cfg.apis.orsKey ? 'ors' : 'est';\nconst routeHash = from.id + '>' + to.id + '>' + source;\nconst cache = flow.get('profiles') || {};\nif (cache[key] === routeHash) {\n    node.status({ fill: 'green', shape: 'ring', text: 'unverändert: ' + key });\n    return null;\n}\nconst job = {\n    user: user, routeId: routeId, key: key, name: r.name || routeId,\n    from: from, to: to, air: dist(from, to), profileTopic: profileTopic\n};\nnode.status({ fill: 'blue', shape: 'dot', text: 'berechne ' + key });\nif (!cfg.apis.orsKey) return [null, null, { job: job }];\n\nreturn [null, {\n    job: job,\n    url: cfg.apis.ors + '/v2/directions/cycling-regular',\n    headers: {\n        'Authorization': cfg.apis.orsKey,\n        'Content-Type': 'application/json',\n        'Accept': 'application/json'\n    },\n    payload: {\n        coordinates: [[from.lon, from.lat], [to.lon, to.lat]],\n        elevation: true,\n        extra_info: ['waytype', 'steepness'],\n        instructions: false\n    }\n}, null];\n",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "80272a52bf22f569"
+      ],
+      [
+        "4fc8013d9f907acc"
+      ],
+      [
+        "87c06a4b285214ca"
+      ]
+    ],
+    "x": 330,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "4fc8013d9f907acc",
+    "type": "delay",
+    "name": "max. 1 Anfrage / 2 s",
+    "pauseType": "rate",
+    "timeout": "5",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "2",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "allowrate": false,
+    "outputs": 1,
+    "wires": [
+      [
+        "5868173e107d178a"
+      ]
+    ],
+    "x": 520,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "5868173e107d178a",
+    "type": "http request",
+    "name": "ORS Fahrrad",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "1df41b0e99e104a0"
+      ]
+    ],
+    "x": 710,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "1df41b0e99e104a0",
+    "type": "function",
+    "name": "Fahrrad auswerten",
+    "func": "// Wertet die ORS-Fahrradroute aus: Länge, Dauer, Höhenmeter, Radweganteil.\n// Ausgang 1: weiter zur Fußweg-Anfrage | 2: direkt zum Profil (bei Fehler)\nconst cfg = global.get('cfg');\nconst job = msg.job;\nconst r = msg.statusCode === 200 && msg.payload && msg.payload.routes && msg.payload.routes[0];\nif (!r) {\n    job.orsError = 'ORS Fahrrad: HTTP ' + msg.statusCode + ' ' +\n        JSON.stringify(msg.payload && msg.payload.error || msg.payload).slice(0, 200);\n    node.status({ fill: 'red', shape: 'ring', text: 'ORS-Fehler ' + msg.statusCode });\n    node.warn(job.orsError);\n    return [null, { job: job }];\n}\nconst s = r.summary || {};\n// Wegarten (waytype): 6 = Cycleway (Radweg). amount = Anteil in %\nconst wt = (r.extras && r.extras.waytype && r.extras.waytype.summary) || [];\nconst cycleway = wt.filter(w => w.value === 6).reduce((a, w) => a + w.amount, 0);\n// Steigungsklassen (steepness): 3 = 7–9 %, 4 = 10–15 %, 5 = über 15 %\nconst st = (r.extras && r.extras.steepness && r.extras.steepness.summary) || [];\nconst steep = st.filter(x => x.value >= 3).reduce((a, x) => a + x.amount, 0);\njob.bike = {\n    km: s.distance / 1000,\n    min: s.duration / 60,\n    ascent: s.ascent != null ? s.ascent : (r.ascent != null ? r.ascent : null),\n    descent: s.descent != null ? s.descent : (r.descent != null ? r.descent : null),\n    cyclewayPct: Math.round(cycleway),\n    steepPct: Math.round(steep)\n};\nnode.status({ fill: 'green', shape: 'dot', text: job.key + ': ' + job.bike.km.toFixed(1) + ' km' });\nreturn [{\n    job: job,\n    url: cfg.apis.ors + '/v2/directions/foot-walking',\n    headers: {\n        'Authorization': cfg.apis.orsKey,\n        'Content-Type': 'application/json',\n        'Accept': 'application/json'\n    },\n    payload: {\n        coordinates: [[job.from.lon, job.from.lat], [job.to.lon, job.to.lat]],\n        instructions: false\n    }\n}, null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "3a1e6fd924641cff"
+      ],
+      [
+        "87c06a4b285214ca"
+      ]
+    ],
+    "x": 900,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "3a1e6fd924641cff",
+    "type": "http request",
+    "name": "ORS zu Fuß",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "87c06a4b285214ca"
+      ]
+    ],
+    "x": 1090,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "87c06a4b285214ca",
+    "type": "function",
+    "name": "Profil bauen",
+    "func": "// Baut das Streckenprofil und veröffentlicht es retained auf\n// .../profiles/<nutzer>/<route-id>. Fehlende ORS-Daten werden geschätzt.\nconst cfg = global.get('cfg');\nconst R = cfg.reco;\nconst job = msg.job;\n\n// Fußweg-Antwort von ORS (falls vorhanden)\nif (typeof msg.url === 'string' && msg.url.indexOf('foot-walking') >= 0) {\n    const r = msg.statusCode === 200 && msg.payload && msg.payload.routes && msg.payload.routes[0];\n    if (r) job.walk = { km: r.summary.distance / 1000, min: r.summary.duration / 60 };\n    else job.orsError = (job.orsError ? job.orsError + ' | ' : '') + 'ORS Fußweg: HTTP ' + msg.statusCode;\n}\n\nconst r1 = x => x == null ? null : Math.round(x * 10) / 10;\nconst roadKm = job.air / 1000 * R.detourFactor;\nconst bike = job.bike || {\n    km: roadKm, min: roadKm / R.bikeSpeedKmh * 60,\n    ascent: null, descent: null, cyclewayPct: null, steepPct: null\n};\nconst walk = job.walk || { km: roadKm, min: roadKm / R.walkSpeedKmh * 60 };\nconst transitMin = R.transitAccessMin + R.transitWaitMin + bike.km / R.transitSpeedKmh * 60;\nconst source = job.bike ? 'ors' : 'est';\nconst st = s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, capacity: s.capacity });\n\nconst profile = {\n    user: job.user,\n    route: job.routeId,\n    name: job.name,\n    from: st(job.from),\n    to: st(job.to),\n    bike: {\n        km: r1(bike.km), min: r1(bike.min), ascent: r1(bike.ascent), descent: r1(bike.descent),\n        cyclewayPct: bike.cyclewayPct, steepPct: bike.steepPct\n    },\n    walk: { km: r1(walk.km), min: r1(walk.min) },\n    transit: { min: r1(transitMin), estimated: true },\n    source: source === 'ors' ? 'openrouteservice' : 'Schätzung (Luftlinie)',\n    orsError: job.orsError || null,\n    routeHash: job.from.id + '>' + job.to.id + '>' + source,\n    computedAt: new Date().toISOString()\n};\nconst cache = flow.get('profiles') || {};\ncache[job.key] = profile.routeHash;\nflow.set('profiles', cache);\nnode.status({ fill: 'green', shape: 'dot', text: job.key + ' (' + profile.source + ')' });\nreturn { topic: job.profileTopic, payload: profile, qos: 1, retain: true };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "80272a52bf22f569"
+      ]
+    ],
+    "x": 1280,
+    "y": 260,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "80272a52bf22f569",
+    "type": "mqtt out",
+    "name": "g6-tobias-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 1470,
+    "y": 340,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "7294faaf99d274bf",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 420,
+    "z": "d0758e3c8908c3f2"
+  },
+  {
+    "id": "7840fbbb91c69ead",
+    "type": "catch",
+    "z": "d0758e3c8908c3f2",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 420,
+    "wires": [
+      [
+        "7294faaf99d274bf"
+      ]
+    ]
+  },
+  {
+    "id": "95e2a023da7345ca",
+    "type": "comment",
+    "z": "c74bf7aebad4c5d0",
+    "name": "Eingänge (Wildcards) → Empfehlung",
+    "info": "Die Gewichte stehen in der Konfiguration (`cfg.reco`).",
+    "x": 230,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "227226d5f179f0e4",
+    "type": "function",
+    "name": "Empfehlung berechnen",
+    "func": "// ============================================================\n//  Empfehlungsdienst\n//  Eingänge (alle per Wildcard abonniert):\n//    .../profiles/+/+       Streckenprofile (retained)\n//    .../live/bicimad/+     Räder/Plätze je Station\n//    .../live/weather       aktuelles Wetter\n//    .../system/+           Status der Collectors (Birth / Close / Last Will)\n//    Takt alle 60 s         prüft, ob Daten veraltet sind\n//  Ausgänge (ein Ausgang, mehrere Nachrichten):\n//    .../reco/<nutzer>/<route>   Empfehlung, QoS 1, retained\n//    .../alerts/<nutzer>         Wechsel der Empfehlung, QoS 1, nicht retained\n// ============================================================\nconst cfg = global.get('cfg');\nconst R = cfg.reco, P = cfg.prefix;\nconst st = context.get('st') || { profiles: {}, bikes: {}, weather: null, system: {}, last: {} };\nconst t = msg.topic || '';\nconst isEmpty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nconst allKeys = () => Object.keys(st.profiles);\nlet affected = [];\n\nif (t.indexOf('/profiles/') >= 0) {\n    const key = t.split('/').slice(-2).join('/');\n    if (isEmpty) {\n        delete st.profiles[key];\n        delete st.last[key];\n        context.set('st', st);\n        node.status({ fill: 'grey', shape: 'dot', text: 'Route entfernt: ' + key });\n        return [[{ topic: P + '/reco/' + key, payload: '', qos: 1, retain: true }]];\n    }\n    st.profiles[key] = msg.payload;\n    // retain=false heißt: frisch berechnet (nicht vom Broker nachgeliefert)\n    st.fresh = st.fresh || {};\n    if (!msg.retain) st.fresh[key] = true;\n    affected = [key];\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    const id = t.split('/').pop();\n    st.bikes[id] = msg.payload;\n    affected = allKeys().filter(k => st.profiles[k].from.id === id || st.profiles[k].to.id === id);\n} else if (t.endsWith('/live/weather')) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    st.weather = msg.payload;\n    affected = allKeys();\n} else if (t.indexOf('/system/') >= 0) {\n    const name = t.split('/').pop();\n    st.system[name] = String(msg.payload);\n    st.sysAt = st.sysAt || {};\n    st.sysAt[name] = Date.now();     // Zeitpunkt der letzten Statusmeldung\n    affected = allKeys();\n} else {\n    affected = allKeys();   // Takt\n}\n\nconst round = x => Math.round(x);\nconst label = { bike: 'BiciMAD', transit: 'ÖPNV', walk: 'Zu Fuß' };\n\nfunction compute(p) {\n    const now = Date.now();\n    const st = context.get('st');\n    const notes = [];\n    // Ein Collector gilt als lebendig, wenn er \"online\" meldet ODER nach seiner\n    // letzten Statusmeldung noch frische Daten geschickt hat. Das fängt den Fall ab,\n    // dass der Broker eine alte Last-Will-Nachricht erst NACH \"online\" nachliefert.\n    const sysAt = st.sysAt || {};\n    const alive = (name, ts) => (st.system[name] || '').indexOf('online') === 0 ||\n        (ts != null && ts > (sysAt[name] || 0));\n    // ---------- Wetter ----------\n    const w = st.weather;\n    const sysW = st.system.weather || 'unbekannt';\n    const weatherOk = w && (now - w.ts) < R.weatherStaleMin * 60000 &&\n        (w.demo || alive('weather', w.ts));\n    let rainBike = 0, rainWalk = 0, windBike = 0, tempPen = 0, weatherWhy = null;\n    if (weatherOk) {\n        if (w.precip >= R.rainHeavy) { rainBike = 2 * R.rainPenaltyBike; rainWalk = 2 * R.rainPenaltyWalk; weatherWhy = 'starker Regen'; }\n        else if (w.precip >= R.rainLight) { rainBike = R.rainPenaltyBike; rainWalk = R.rainPenaltyWalk; weatherWhy = 'Regen'; }\n        if (w.wind >= R.windStrong) windBike = R.windPenaltyBike;\n        if (w.temp < R.coldBelow || w.temp > R.hotAbove) tempPen = R.tempPenalty;\n    } else {\n        notes.push('ohne Wetterdaten (' + sysW + ')');\n    }\n\n    // ---------- Fahrrad ----------\n    const bike = { mode: 'bike', label: label.bike, min: p.bike.min + R.dockMin, ok: true, why: [] };\n    const sysB = st.system.bicimad || 'unbekannt';\n    const sFrom = st.bikes[p.from.id], sTo = st.bikes[p.to.id];\n    const fresh = s => s && typeof s === 'object' && (now - s.ts) < R.staleMin * 60000;\n    if (!alive('bicimad', sFrom && sFrom.ts)) {\n        bike.ok = false; bike.why.push('BiciMAD-Daten nicht verfügbar (' + sysB + ')');\n    } else if (!fresh(sFrom) || !fresh(sTo)) {\n        bike.ok = false; bike.why.push('Stationsdaten fehlen oder sind veraltet');\n    } else {\n        if (sFrom.bikes < R.bikeMinBikes || !sFrom.renting) { bike.ok = false; bike.why.push('keine Räder an ' + p.from.name); }\n        else bike.why.push(sFrom.bikes + ' Räder am Start');\n        if (sTo.docks < R.bikeMinDocks || !sTo.returning) { bike.ok = false; bike.why.push('kein freier Platz an ' + p.to.name); }\n        else bike.why.push(sTo.docks + ' freie Plätze am Ziel');\n    }\n    if (p.bike.ascent != null && p.bike.ascent > 0) {\n        const add = p.bike.ascent * R.minPerHmUp;\n        bike.min += add;\n        bike.why.push(round(p.bike.ascent) + ' Hm bergauf');\n    }\n    if (p.bike.cyclewayPct != null) {\n        bike.min -= R.cyclewayBonusMax * p.bike.cyclewayPct / 100;\n        bike.why.push(p.bike.cyclewayPct + ' % Radweg');\n    }\n    if (rainBike) { bike.min += rainBike; bike.why.push(weatherWhy); }\n    if (windBike) { bike.min += windBike; bike.why.push('starker Wind'); }\n    if (tempPen) { bike.min += tempPen; bike.why.push('Temperatur ' + round(w.temp) + ' °C'); }\n\n    // ---------- Zu Fuß ----------\n    const walk = { mode: 'walk', label: label.walk, min: p.walk.min + rainWalk + tempPen, ok: true, why: [p.walk.km + ' km'] };\n    if (rainWalk) walk.why.push(weatherWhy);\n\n    // ---------- ÖPNV (Schätzung) ----------\n    const transit = { mode: 'transit', label: label.transit, min: p.transit.min, ok: true,\n        why: ['Schätzung: Fußwege + Warten + Fahrt'] };\n\n    const options = [bike, transit, walk];\n    options.forEach(o => { o.min = round(o.min); });\n    const candidates = options.filter(o => o.ok).sort((a, b) => a.min - b.min);\n    const best = candidates[0];\n    if (p.source && p.source.indexOf('Schätzung') === 0) notes.push('Streckenprofil geschätzt (ohne ORS)');\n    return {\n        user: p.user, route: p.route, name: p.name,\n        from: p.from.name, to: p.to.name,\n        best: best.mode, bestLabel: best.label, bestMin: best.min,\n        summary: best.label + ' · ' + best.min + ' min',\n        options: options, notes: notes,\n        updated: new Date().toISOString()\n    };\n}\n\n// Bündeln (Debounce): Kommen mehrere Updates fast gleichzeitig an\n// (z. B. Station + Wetter), wird nur EINMAL nach 1 s gerechnet und gesendet.\nconst pending = context.get('pending') || {};\naffected.forEach(k => { pending[k] = true; });\ncontext.set('pending', pending);\ncontext.set('st', st);\nif (!context.get('timer')) {\n    context.set('timer', true);\n    setTimeout(flushPending, 1000);\n}\nreturn null;\n\nfunction flushPending() {\n    context.set('timer', false);\n    const keys = Object.keys(context.get('pending') || {});\n    context.set('pending', {});\n    const s = context.get('st');\n    const out = [];\n    for (const key of keys) {\n        const p = s.profiles[key];\n        if (!p) continue;\n        const reco = compute(p);\n        const sig = JSON.stringify([reco.best, reco.options, reco.notes]);\n        const prev = s.last[key];\n        if (prev && prev.sig === sig) continue;          // nichts geändert\n        out.push({ topic: P + '/reco/' + key, payload: reco, qos: 1, retain: true });\n\n        const isNewRoute = !prev && s.fresh && s.fresh[key];\n        if (s.fresh) delete s.fresh[key];\n        if ((prev && prev.best !== reco.best) || isNewRoute) {\n            let text;\n            if (isNewRoute) {\n                text = 'Route \"' + reco.name + '\" ist aktiv: aktuell ' + reco.summary;\n            } else {\n                const old = reco.options.find(o => o.mode === prev.best);\n                const neg = old ? old.why.filter(x => /keine|kein |nicht|veraltet|Regen|Wind|Temperatur/.test(x)) : [];\n                text = 'Route \"' + reco.name + '\": jetzt ' + reco.summary + ' statt ' + label[prev.best] +\n                    (neg.length ? ' (' + neg.join(', ') + ')' : '');\n            }\n            out.push({ topic: P + '/alerts/' + p.user, payload: text, qos: 1, retain: false });\n        }\n        s.last[key] = { sig: sig, best: reco.best };\n    }\n    context.set('st', s);\n    node.status({ fill: 'green', shape: 'dot',\n        text: Object.keys(s.profiles).length + ' Routen, ' + out.length + ' Nachrichten, ' + new Date().toLocaleTimeString('de-DE') });\n    if (out.length) node.send([out]);\n}\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "ce2c74e0f8fc9ce4"
+      ]
+    ],
+    "x": 520,
+    "y": 200,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "57c517c8000fe4e6",
+    "type": "mqtt in",
+    "name": "Profile",
+    "topic": "upm-dsiot-g6-tobias/move/profiles/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": false,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 100,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "05c19190c4b0ec22",
+    "type": "mqtt in",
+    "name": "BiciMAD je Station",
+    "topic": "upm-dsiot-g6-tobias/move/live/bicimad/+",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 150,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "ca2a6ba60dbb5d3d",
+    "type": "mqtt in",
+    "name": "Wetter",
+    "topic": "upm-dsiot-g6-tobias/move/live/weather",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 200,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "8b119ec3b69b2c14",
+    "type": "mqtt in",
+    "name": "Collector-Status",
+    "topic": "upm-dsiot-g6-tobias/move/system/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 250,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "620bc7d5860f3f93",
+    "type": "inject",
+    "name": "Takt 60 s (Daten veraltet?)",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 15,
+    "topic": "tick",
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 300,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "ce2c74e0f8fc9ce4",
+    "type": "mqtt out",
+    "name": "g6-tobias-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 760,
+    "y": 200,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "a79d34115c423729",
+    "type": "comment",
+    "z": "c74bf7aebad4c5d0",
+    "name": "So sieht es das Handy",
+    "info": "MyMQTT: `.../alerts/<nutzer>` und `.../reco/<nutzer>/#` abonnieren.",
+    "x": 200,
+    "y": 360,
+    "wires": []
+  },
+  {
+    "id": "c0837af9566ca0e6",
+    "type": "mqtt in",
+    "name": "Warnungen",
+    "topic": "upm-dsiot-g6-tobias/move/alerts/#",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "38f926fe56d05e1b"
+      ]
+    ],
+    "x": 180,
+    "y": 400,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "38f926fe56d05e1b",
+    "type": "debug",
+    "name": "Warnungen",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 420,
+    "y": 400,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "c191860551201ba6",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 460,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "26b3029ce4b5de39",
+    "type": "catch",
+    "z": "c74bf7aebad4c5d0",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 460,
+    "wires": [
+      [
+        "c191860551201ba6"
+      ]
+    ]
+  },
+  {
+    "id": "85facd4bcc49a099",
+    "type": "ui-base",
+    "name": "MadridMove",
+    "path": "/dashboard",
+    "appIcon": "",
+    "includeClientData": true,
+    "acceptsClientConfig": [
+      "ui-notification",
+      "ui-control"
+    ],
+    "showPathInSidebar": false,
+    "headerContent": "page",
+    "navigationStyle": "default",
+    "titleBarStyle": "default",
+    "showReconnectNotification": true,
+    "notificationDisplayTime": 1,
+    "showDisconnectNotification": true,
+    "allowInstall": false
+  },
+  {
+    "id": "7fb82c2635e3b5bd",
+    "type": "ui-theme",
+    "name": "MadridMove",
+    "colors": {
+      "surface": "#1f6f50",
+      "primary": "#1f6f50",
+      "bgPage": "#f6f7f8",
+      "groupBg": "#ffffff",
+      "groupOutline": "#dde1e4"
+    },
+    "sizes": {
+      "density": "default",
+      "pagePadding": "12px",
+      "groupGap": "12px",
+      "groupBorderRadius": "6px",
+      "widgetGap": "12px"
+    }
+  },
+  {
+    "id": "6d17725ddcd9ce96",
+    "type": "ui-page",
+    "name": "Empfehlungen",
+    "ui": "85facd4bcc49a099",
+    "path": "/empfehlungen",
+    "icon": "bike",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 1,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "494ef9dd12244e66",
+    "type": "ui-page",
+    "name": "Routen verwalten",
+    "ui": "85facd4bcc49a099",
+    "path": "/routen",
+    "icon": "map-marker-path",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 2,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "a27978ccd7d7ec45",
+    "type": "ui-page",
+    "name": "System & Demo",
+    "ui": "85facd4bcc49a099",
+    "path": "/system",
+    "icon": "cog",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 3,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "ecc9c7ceed7e0af6",
+    "type": "ui-group",
+    "name": "Aktuelle Empfehlungen",
+    "page": "6d17725ddcd9ce96",
+    "width": "12",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "b84763072e254742",
+    "type": "ui-group",
+    "name": "Neue Route",
+    "page": "494ef9dd12244e66",
+    "width": "6",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "660b0051cef2c830",
+    "type": "ui-group",
+    "name": "Route löschen",
+    "page": "494ef9dd12244e66",
+    "width": "6",
+    "height": "1",
+    "order": 2,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "92cb90a6fb1216b1",
+    "type": "ui-group",
+    "name": "Datenquellen",
+    "page": "a27978ccd7d7ec45",
+    "width": "6",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "a8c68267a6a734e3",
+    "type": "ui-group",
+    "name": "Wetter Madrid",
+    "page": "a27978ccd7d7ec45",
+    "width": "6",
+    "height": "1",
+    "order": 2,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "6d5459b008feb016",
+    "type": "ui-group",
+    "name": "Demo-Schalter",
+    "page": "a27978ccd7d7ec45",
+    "width": "6",
+    "height": "1",
+    "order": 3,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "9e50c656de43e6d6",
+    "type": "comment",
+    "z": "cf931b46039477f7",
+    "name": "Seite \"Empfehlungen\"",
+    "info": "",
+    "x": 200,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "7a666f76cb262fa8",
+    "type": "mqtt in",
+    "name": "Empfehlungen",
+    "topic": "upm-dsiot-g6-tobias/move/reco/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "a83333ddf90a5dfb"
+      ]
+    ],
+    "x": 140,
+    "y": 80,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a83333ddf90a5dfb",
+    "type": "function",
+    "name": "Tabelle bauen",
+    "func": "// .../reco/+/+ -> Tabelle aller Empfehlungen (eine Zeile pro Route)\nconst rows = context.get('rows') || {};\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') {\n    delete rows[key];\n} else {\n    const r = msg.payload;\n    const o = m => r.options.find(x => x.mode === m);\n    const fmt = x => !x ? '–' : (x.ok ? x.min + ' min' : 'nicht möglich');\n    const best = o(r.best);\n    rows[key] = {\n        'Nutzer': r.user,\n        'Route': r.name,\n        'Von → Nach': r.from + ' → ' + r.to,\n        'Empfehlung': r.bestLabel + ' (' + r.bestMin + ' min)',\n        'BiciMAD': fmt(o('bike')),\n        'ÖPNV*': fmt(o('transit')),\n        'Zu Fuß': fmt(o('walk')),\n        'Begründung': (best ? best.why : []).concat(r.notes || []).join(', '),\n        'Stand': new Date(r.updated).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' })\n    };\n}\ncontext.set('rows', rows);\nmsg.payload = Object.values(rows).sort((a, b) =>\n    (a['Nutzer'] + a['Route']).localeCompare(b['Nutzer'] + b['Route']));\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "3ab4324b059bad48"
+      ]
+    ],
+    "x": 330,
+    "y": 80,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "3ab4324b059bad48",
+    "type": "ui-table",
+    "name": "Empfehlungen",
+    "label": "",
+    "maxrows": 0,
+    "passthru": false,
+    "autocols": true,
+    "showSearch": true,
+    "deselect": true,
+    "selectionType": "none",
+    "columns": [],
+    "mobileBreakpoint": "sm",
+    "mobileBreakpointType": "defaults",
+    "action": "replace",
+    "wires": [
+      []
+    ],
+    "group": "ecc9c7ceed7e0af6",
+    "order": 1,
+    "width": "12",
+    "height": "1",
+    "className": "",
+    "x": 520,
+    "y": 80,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "692ec58e820e9839",
+    "type": "ui-text",
+    "name": "* ÖPNV-Zeiten sind Schätzungen (Fußwege + Warten + Fahrt)",
+    "label": "* ÖPNV-Zeiten sind Schätzungen (Fußwege + Warten + Fahrt)",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "ecc9c7ceed7e0af6",
+    "order": 2,
+    "width": "12",
+    "height": "1",
+    "className": "",
+    "x": 520,
+    "y": 120,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "5ab4595dc07f4192",
+    "type": "mqtt in",
+    "name": "Warnungen",
+    "topic": "upm-dsiot-g6-tobias/move/alerts/#",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "79c72efc7dc35454"
+      ]
+    ],
+    "x": 140,
+    "y": 160,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "79c72efc7dc35454",
+    "type": "function",
+    "name": "Popup-Text",
+    "func": "// .../alerts/<nutzer> -> Popup im Dashboard\nconst user = msg.topic.split('/').pop();\nreturn { payload: user + ': ' + msg.payload };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "8743f9032f6b5fd4"
+      ]
+    ],
+    "x": 330,
+    "y": 160,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "8743f9032f6b5fd4",
+    "type": "ui-notification",
+    "ui": "85facd4bcc49a099",
+    "position": "top right",
+    "colorDefault": true,
+    "color": "",
+    "displayTime": "6",
+    "showCountdown": true,
+    "outputs": 1,
+    "allowDismiss": true,
+    "dismissText": "Schließen",
+    "allowConfirm": false,
+    "confirmText": "OK",
+    "showInput": false,
+    "inputType": "text",
+    "inputLabel": "",
+    "raw": false,
+    "className": "",
+    "name": "Warnung",
+    "wires": [
+      []
+    ],
+    "x": 520,
+    "y": 160,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "59e76b41f37c0e17",
+    "type": "comment",
+    "z": "cf931b46039477f7",
+    "name": "Seite \"Routen verwalten\"",
+    "info": "Jedes Feld sendet mit eigenem msg.topic an die Function **Formular**.",
+    "x": 220,
+    "y": 230,
+    "wires": []
+  },
+  {
+    "id": "5863149a8965c7e0",
+    "type": "function",
+    "name": "Formular",
+    "func": "// Formular \"Route anlegen / löschen\". Jedes Eingabefeld sendet mit eigenem msg.topic.\n// Ausgang 1: MQTT (Route anlegen/löschen) | 2: Statustext im Dashboard\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst f = flow.get('form') || {};\nconst slug = s => String(s || '').toLowerCase().normalize('NFD')\n    .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '').slice(0, 30);\n\nswitch (msg.topic) {\n    case 'user': f.user = msg.payload; break;\n    case 'name': f.name = msg.payload; break;\n    case 'from': f.from = msg.payload; break;\n    case 'to': f.to = msg.payload; break;\n    case 'delSel': f.del = msg.payload; break;\n    case 'create': {\n        const u = slug(f.user), r = slug(f.name);\n        if (!u || !r || !f.from || !f.to) return [null, { payload: '⚠ Bitte Name, Routenname, Start und Ziel ausfüllen.' }];\n        if (f.from === f.to) return [null, { payload: '⚠ Start und Ziel sind gleich.' }];\n        const existing = Object.keys(flow.get('routeKeys') || {});\n        const mine = existing.filter(k => k.split('/')[0] === u && k !== u + '/' + r);\n        if (mine.length >= cfg.reco.maxRoutesPerUser) {\n            return [null, { payload: '⚠ Höchstens ' + cfg.reco.maxRoutesPerUser + ' Routen pro Nutzer.' }];\n        }\n        const route = { name: f.name, from: { id: f.from }, to: { id: f.to }, createdAt: new Date().toISOString() };\n        flow.set('form', f);\n        return [\n            { topic: P + '/routes/' + u + '/' + r, payload: route, qos: 1, retain: true },\n            { payload: '✔ Route ' + u + '/' + r + ' angelegt. Aufs Handy: ' + P + '/alerts/' + u }\n        ];\n    }\n    case 'delete': {\n        if (!f.del) return [null, { payload: '⚠ Bitte eine Route zum Löschen wählen.' }];\n        const key = f.del;\n        f.del = null;\n        flow.set('form', f);\n        // Leere Retained-Nachricht = gespeicherte Nachricht auf dem Broker löschen\n        return [\n            { topic: P + '/routes/' + key, payload: '', qos: 1, retain: true },\n            { payload: '🗑 Route ' + key + ' gelöscht.' }\n        ];\n    }\n}\nflow.set('form', f);\nreturn null;\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "3f7518d6d1c8eb14"
+      ],
+      [
+        "1ef55eb0d8e799a3"
+      ]
+    ],
+    "x": 620,
+    "y": 360,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "213208492591d653",
+    "type": "ui-text-input",
+    "name": "Dein Name (Kurzname)",
+    "label": "Dein Name (Kurzname)",
+    "topic": "user",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 280,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "7d25ee7b1c5647aa",
+    "type": "ui-text-input",
+    "name": "Routenname, z. B. Zur Uni",
+    "label": "Routenname, z. B. Zur Uni",
+    "topic": "name",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 320,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "1fdb368c5a29fb61",
+    "type": "ui-dropdown",
+    "name": "Start (BiciMAD-Station)",
+    "label": "Start (BiciMAD-Station)",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": false,
+    "chips": false,
+    "clearable": false,
+    "options": [
+      {
+        "label": "(lädt …)",
+        "value": ""
+      }
+    ],
+    "payload": "",
+    "topic": "from",
+    "topicType": "str",
+    "typeIsComboBox": true,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 360,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "31767c543877dd0b",
+    "type": "ui-dropdown",
+    "name": "Ziel (BiciMAD-Station)",
+    "label": "Ziel (BiciMAD-Station)",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": false,
+    "chips": false,
+    "clearable": false,
+    "options": [
+      {
+        "label": "(lädt …)",
+        "value": ""
+      }
+    ],
+    "payload": "",
+    "topic": "to",
+    "topicType": "str",
+    "typeIsComboBox": true,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 400,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "3e38c3c0efe8734b",
+    "type": "ui-button",
+    "name": "Route anlegen",
+    "label": "Route anlegen",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "plus",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "create",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 5,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 440,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a7a0d0a4fdc5706c",
+    "type": "ui-dropdown",
+    "name": "Route",
+    "label": "Route",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": false,
+    "chips": false,
+    "clearable": false,
+    "options": [
+      {
+        "label": "(lädt …)",
+        "value": ""
+      }
+    ],
+    "payload": "",
+    "topic": "delSel",
+    "topicType": "str",
+    "typeIsComboBox": true,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "660b0051cef2c830",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 480,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "7cd9abd4ed639dec",
+    "type": "ui-button",
+    "name": "Route löschen",
+    "label": "Route löschen",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "delete",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "delete",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "660b0051cef2c830",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 520,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "3f7518d6d1c8eb14",
+    "type": "mqtt out",
+    "name": "g6-tobias-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 840,
+    "y": 340,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "1ef55eb0d8e799a3",
+    "type": "ui-text",
+    "name": "Status",
+    "label": "Status",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "b84763072e254742",
+    "order": 6,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 840,
+    "y": 390,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "2b0d0a8239c9c0d1",
+    "type": "mqtt in",
+    "name": "Stationsliste",
+    "topic": "upm-dsiot-g6-tobias/move/static/stations",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "efd0d46bbb7df7e3"
+      ]
+    ],
+    "x": 140,
+    "y": 580,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "efd0d46bbb7df7e3",
+    "type": "function",
+    "name": "Optionen Start/Ziel",
+    "func": "// Stationsliste -> Auswahloptionen für Start und Ziel\nconst list = Array.isArray(msg.payload) ? msg.payload : [];\nconst options = list.map(s => ({ label: s.name + ' (' + s.id + ')', value: s.id }));\nreturn { ui_update: { options: options } };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "1fdb368c5a29fb61",
+        "31767c543877dd0b"
+      ]
+    ],
+    "x": 380,
+    "y": 580,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "4ef83f35dca8963c",
+    "type": "mqtt in",
+    "name": "Routen",
+    "topic": "upm-dsiot-g6-tobias/move/routes/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "cf81e327680124eb"
+      ]
+    ],
+    "x": 140,
+    "y": 630,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "cf81e327680124eb",
+    "type": "function",
+    "name": "Routenliste",
+    "func": "// .../routes/+/+ -> Liste aller Routen (für \"Route löschen\" und die Obergrenze)\nconst routes = flow.get('routeKeys') || {};\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty) delete routes[key];\nelse if (typeof msg.payload === 'object') routes[key] = msg.payload.name || key;\nflow.set('routeKeys', routes);\nconst options = Object.keys(routes).sort().map(k => ({ label: k + ' – ' + routes[k], value: k }));\nreturn { ui_update: { options: options.length ? options : [{ label: '(keine Routen)', value: '' }] } };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "a7a0d0a4fdc5706c"
+      ]
+    ],
+    "x": 380,
+    "y": 630,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "16f1765b3588c467",
+    "type": "comment",
+    "z": "cf931b46039477f7",
+    "name": "Seite \"System & Demo\"",
+    "info": "",
+    "x": 200,
+    "y": 700,
+    "wires": []
+  },
+  {
+    "id": "e5887a769c956e87",
+    "type": "mqtt in",
+    "name": "Collector-Status",
+    "topic": "upm-dsiot-g6-tobias/move/system/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "fc9388be0aaf8c1f"
+      ]
+    ],
+    "x": 140,
+    "y": 740,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "fc9388be0aaf8c1f",
+    "type": "function",
+    "name": "Statustabelle",
+    "func": "// .../system/+ -> Tabelle \"Datenquellen\"\nconst rows = context.get('rows') || {};\nconst name = msg.topic.split('/').pop();\nrows[name] = {\n    'Quelle': name,\n    'Status': String(msg.payload),\n    'Seit': new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' })\n};\ncontext.set('rows', rows);\nreturn { payload: Object.values(rows) };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "4d5787333495d484"
+      ]
+    ],
+    "x": 330,
+    "y": 740,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "4d5787333495d484",
+    "type": "ui-table",
+    "name": "Datenquellen",
+    "label": "",
+    "maxrows": 0,
+    "passthru": false,
+    "autocols": true,
+    "showSearch": true,
+    "deselect": true,
+    "selectionType": "none",
+    "columns": [],
+    "mobileBreakpoint": "sm",
+    "mobileBreakpointType": "defaults",
+    "action": "replace",
+    "wires": [
+      []
+    ],
+    "group": "92cb90a6fb1216b1",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 520,
+    "y": 740,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "cb63e40d7095b3f9",
+    "type": "mqtt in",
+    "name": "Wetter",
+    "topic": "upm-dsiot-g6-tobias/move/live/weather",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "c0bb66e34aebe6ae"
+      ]
+    ],
+    "x": 140,
+    "y": 790,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "c0bb66e34aebe6ae",
+    "type": "function",
+    "name": "Wettertext",
+    "func": "// .../live/weather -> Textzeile\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst t = new Date(w.ts).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' });\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind · ' + t + (w.demo ? ' (DEMO)' : '') };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "0c0addcf953bd994"
+      ]
+    ],
+    "x": 330,
+    "y": 790,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "0c0addcf953bd994",
+    "type": "ui-text",
+    "name": "Aktuell",
+    "label": "Aktuell",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "a8c68267a6a734e3",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 520,
+    "y": 790,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "e9a5bb38b5fe76e2",
+    "type": "function",
+    "name": "Demo",
+    "func": "// Demo-Schalter: löst Situationen auf Knopfdruck aus (Nachrichten NICHT retained)\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst now = Date.now();\nswitch (msg.topic) {\n    case 'rain':\n        return [[{ topic: P + '/live/weather', qos: 0, retain: false,\n            payload: { temp: 11, precip: 3.0, wind: 12, code: 65, ts: now, demo: true, source: 'demo' } }]];\n    case 'empty': {\n        const profiles = Object.values(flow.get('demoProfiles') || {});\n        const ids = {};\n        profiles.forEach(p => { ids[p.from.id] = p.from.capacity || 20; });\n        return [Object.keys(ids).map(id => ({\n            topic: P + '/live/bicimad/' + id, qos: 0, retain: false,\n            payload: { bikes: 0, docks: ids[id], renting: true, returning: true, ts: now, demo: true }\n        }))];\n    }\n    case 'reset':\n        // Collectors senden beim nächsten Abruf wieder echte Werte\n        return [[\n            { topic: P + '/cmd/bicimad/refresh', payload: 'refresh', qos: 1, retain: false },\n            { topic: P + '/cmd/weather/refresh', payload: 'refresh', qos: 1, retain: false }\n        ]];\n    case 'demoroutes': {\n        // Drei Beispielrouten für den Nutzer \"demo\" (Koordinaten -> nächste Station)\n        const mk = (id, name, a, b) => ({\n            topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n            payload: { name: name, from: a, to: b, createdAt: new Date().toISOString() }\n        });\n        return [[\n            mk('sol-moncloa', 'Sol → Moncloa', { lat: 40.4169, lon: -3.7035 }, { lat: 40.4352, lon: -3.7190 }),\n            mk('atocha-retiro', 'Atocha → Retiro', { lat: 40.4066, lon: -3.6892 }, { lat: 40.4199, lon: -3.6887 }),\n            mk('moncloa-uni', 'Moncloa → Ciudad Universitaria', { lat: 40.4352, lon: -3.7190 }, { lat: 40.4437, lon: -3.7276 })\n        ]];\n    }\n}\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "48c791825beaedd7"
+      ]
+    ],
+    "x": 620,
+    "y": 900,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "d31f3a03d5381bac",
+    "type": "ui-button",
+    "name": "Demo-Routen anlegen (Nutzer \"demo\")",
+    "label": "Demo-Routen anlegen (Nutzer \"demo\")",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "map",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "demoroutes",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 850,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "bf3423bdc0536e51",
+    "type": "ui-button",
+    "name": "Starkregen simulieren",
+    "label": "Starkregen simulieren",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "weather-pouring",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "rain",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 890,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "6dd75f5efb11b9af",
+    "type": "ui-button",
+    "name": "Startstationen leer simulieren",
+    "label": "Startstationen leer simulieren",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "bicycle",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "empty",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 930,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "5225e8208190205d",
+    "type": "ui-button",
+    "name": "Demo beenden (echte Daten neu laden)",
+    "label": "Demo beenden (echte Daten neu laden)",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "refresh",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "reset",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 970,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "658125ec4008ff82",
+    "type": "inject",
+    "name": "Demo-Routen anlegen",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 1,
+    "topic": "demoroutes",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "x": 380,
+    "y": 1010,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "48c791825beaedd7",
+    "type": "mqtt out",
+    "name": "g6-tobias-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 840,
+    "y": 900,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a9fe39212f79725e",
+    "type": "mqtt in",
+    "name": "Profile (für Demo)",
+    "topic": "upm-dsiot-g6-tobias/move/profiles/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "e9aecbc526794005"
+      ]
+    ],
+    "x": 140,
+    "y": 1060,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "e9aecbc526794005",
+    "type": "function",
+    "name": "Profile merken",
+    "func": "// Merkt sich die Profile, damit der Demo-Schalter die Startstationen kennt\nconst profiles = flow.get('demoProfiles') || {};\nconst key = msg.topic.split('/').slice(-2).join('/');\nif (typeof msg.payload === 'object' && msg.payload) profiles[key] = msg.payload;\nelse delete profiles[key];\nflow.set('demoProfiles', profiles);\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      []
+    ],
+    "x": 380,
+    "y": 1060,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "cb13d38f8a2e9b8e",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 1120,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "b9c83de646ca62e0",
+    "type": "catch",
+    "z": "cf931b46039477f7",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 1120,
+    "wires": [
+      [
+        "cb13d38f8a2e9b8e"
+      ]
+    ]
+  }
+]
