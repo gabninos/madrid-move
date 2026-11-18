@@ -1,0 +1,523 @@
+[
+  {
+    "id": "41cdb26069d4ff9b",
+    "type": "tab",
+    "label": "Collector",
+    "disabled": false,
+    "info": "Rolle A. Holt Live-Daten (BiciMAD, Wetter) und veröffentlicht sie per MQTT. Jeder Collector hat eine **eigene Broker-Verbindung** mit Birth-, Close- und Last-Will-Nachricht auf `.../system/<collector>`."
+  },
+  {
+    "id": "3595c8958a801afb",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "BiciMAD: Stationsliste (beim Start, dann stündlich)",
+    "info": "GBFS-Einstiegsdatei → Feed-URLs → `station_information` → eine Retained-Nachricht `.../static/stations`.",
+    "x": 260,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "2b082bad98168ef5",
+    "type": "inject",
+    "name": "stündlich",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "3600",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "wires": [
+      [
+        "7e5443edbd3ce42f"
+      ]
+    ],
+    "x": 140,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "7e5443edbd3ce42f",
+    "type": "function",
+    "name": "GBFS-URL",
+    "func": "// Startet den Abruf der GBFS-Einstiegsdatei\nconst cfg = global.get('cfg');\nreturn { url: cfg.apis.gbfs };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "d963b339f11b497f"
+      ]
+    ],
+    "x": 330,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "d963b339f11b497f",
+    "type": "http request",
+    "name": "GBFS-Einstieg",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "4af29c5874c0ba69"
+      ]
+    ],
+    "x": 520,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "4af29c5874c0ba69",
+    "type": "function",
+    "name": "Feeds finden",
+    "func": "// Liest aus der GBFS-Einstiegsdatei die URLs der benötigten Feeds\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'GBFS: HTTP ' + msg.statusCode });\n    node.warn({ hinweis: 'GBFS-Einstiegsdatei nicht lesbar', statusCode: msg.statusCode, payload: msg.payload });\n    return null;\n}\nconst data = msg.payload.data || {};\n// GBFS gruppiert Feeds nach Sprache: data.es.feeds, data.en.feeds, ...\nconst lang = data.es ? 'es' : (data.en ? 'en' : Object.keys(data)[0]);\nconst feeds = {};\nfor (const f of (data[lang] && data[lang].feeds) || []) feeds[f.name] = f.url;\nif (!feeds.station_information || !feeds.station_status) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Feeds fehlen' });\n    node.warn({ hinweis: 'station_information/station_status nicht gefunden', gefunden: Object.keys(feeds) });\n    return null;\n}\nflow.set('feeds', feeds);\nnode.status({ fill: 'green', shape: 'dot', text: 'Feeds gefunden (' + lang + ')' });\nreturn { url: feeds.station_information };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "a65961ef574af49d"
+      ]
+    ],
+    "x": 710,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "a65961ef574af49d",
+    "type": "http request",
+    "name": "station_information",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "bae57bbda69e49f1"
+      ]
+    ],
+    "x": 900,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "bae57bbda69e49f1",
+    "type": "function",
+    "name": "Stationsliste",
+    "func": "// station_information: Name, Lage, Kapazität aller Stationen.\n// Wird als EINE Retained-Nachricht veröffentlicht (Stationsliste fürs Formular\n// und für den Profil-Dienst). Ändert sich selten -> Abruf alle 24 h.\nconst cfg = global.get('cfg');\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'HTTP ' + msg.statusCode });\n    return null;\n}\nconst list = (msg.payload.data && msg.payload.data.stations) || [];\nconst out = list.map(s => ({\n    id: String(s.station_id),\n    name: s.name,\n    lat: s.lat,\n    lon: s.lon,\n    capacity: s.capacity\n}));\nout.sort((a, b) => a.name.localeCompare(b.name, 'es'));\nnode.status({ fill: 'green', shape: 'dot', text: out.length + ' Stationen' });\nreturn { topic: cfg.prefix + '/static/stations', payload: out, qos: 1, retain: true };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "56a71a94373b69ec"
+      ]
+    ],
+    "x": 1090,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "56a71a94373b69ec",
+    "type": "mqtt out",
+    "name": "g6-col-bicimad",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "45bdfcb6d12255f2",
+    "wires": [],
+    "x": 1280,
+    "y": 80,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "2b921a8ea30d5121",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "BiciMAD: Status (jede Minute, nur Änderungen)",
+    "info": "Ein Topic pro Station: `.../live/bicimad/<id>`, QoS 0, retained. Gesendet wird nur bei Änderung, spätestens alle 10 min.\n\nDas Kommando `.../cmd/bicimad/refresh` (Demo-Schalter) erzwingt ein komplettes Neusenden.",
+    "x": 250,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "14cc16d89643adbe",
+    "type": "inject",
+    "name": "jede Minute",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 10,
+    "topic": "",
+    "wires": [
+      [
+        "abb79385c33df652"
+      ]
+    ],
+    "x": 140,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "abb79385c33df652",
+    "type": "function",
+    "name": "Status-URL",
+    "func": "// Startet den Abruf von station_status (jede Minute).\n// Ein Kommando auf .../cmd/bicimad/refresh leert den Cache,\n// dann werden beim nächsten Abruf ALLE Stationen neu veröffentlicht.\nif (typeof msg.topic === 'string' && msg.topic.endsWith('/cmd/bicimad/refresh')) {\n    flow.set('lastSent', null);\n    node.status({ fill: 'blue', shape: 'dot', text: 'Neu senden angefordert' });\n}\nconst feeds = flow.get('feeds');\nif (!feeds) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'warte auf Feed-URLs' });\n    return null;\n}\nreturn { url: feeds.station_status };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "d33b929ce575f33c"
+      ]
+    ],
+    "x": 330,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "d33b929ce575f33c",
+    "type": "http request",
+    "name": "station_status",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "dfd0122473f613a3"
+      ]
+    ],
+    "x": 520,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "dfd0122473f613a3",
+    "type": "function",
+    "name": "Status publizieren",
+    "func": "// station_status -> ein Topic pro Station: .../live/bicimad/<station-id>\n// \"Report by Exception\": nur Stationen, deren Werte sich geändert haben,\n// werden gesendet, spätestens aber alle 10 min (damit Empfänger frische\n// Zeitstempel sehen und veraltete Daten erkennen können).\nconst cfg = global.get('cfg');\nif (msg.statusCode !== 200 || typeof msg.payload !== 'object') {\n    node.status({ fill: 'red', shape: 'ring', text: 'HTTP ' + msg.statusCode });\n    return null;\n}\nconst REFRESH_MS = 10 * 60 * 1000;\nconst list = (msg.payload.data && msg.payload.data.stations) || [];\nlet last = flow.get('lastSent');\n// Gedächtnis verwerfen, wenn sich das Präfix geändert hat (Context überlebt einen Deploy)\nif (!last || last.__prefix !== cfg.prefix) last = { __prefix: cfg.prefix };\nconst now = Date.now();\nconst out = [];\nfor (const s of list) {\n    const id = String(s.station_id);\n    const v = {\n        bikes: s.num_bikes_available,\n        docks: s.num_docks_available,\n        renting: !(s.is_renting === 0 || s.is_renting === false),\n        returning: !(s.is_returning === 0 || s.is_returning === false)\n    };\n    const key = [v.bikes, v.docks, v.renting, v.returning].join('/');\n    const prev = last[id];\n    if (prev && prev.key === key && now - prev.t < REFRESH_MS) continue;\n    last[id] = { key: key, t: now };\n    v.ts = now;\n    out.push({ topic: cfg.prefix + '/live/bicimad/' + id, payload: v, qos: 0, retain: true });\n}\nflow.set('lastSent', last);\n// Heartbeat: bei jedem erfolgreichen Abruf \"online\" bestätigen (retained). Korrigiert\n// einen veralteten Status, falls der Broker eine alte Last-Will-Nachricht nachliefert.\n// Stürzt der Collector ab, bleibt der Heartbeat aus und der Last Will greift.\nout.push({ topic: cfg.prefix + '/system/bicimad', payload: 'online', qos: 1, retain: true });\nnode.status({ fill: 'green', shape: 'dot',\n    text: out.length + '/' + list.length + ' gesendet, ' + new Date().toLocaleTimeString('de-DE') });\nreturn [out];\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "87de5ff188623b7c"
+      ]
+    ],
+    "x": 710,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "87de5ff188623b7c",
+    "type": "mqtt out",
+    "name": "g6-col-bicimad",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "45bdfcb6d12255f2",
+    "wires": [],
+    "x": 900,
+    "y": 180,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "13d5aa62015907d3",
+    "type": "mqtt in",
+    "name": "Kommando: neu senden",
+    "topic": "upm-dsiot-g6/move/cmd/bicimad/refresh",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "abb79385c33df652"
+      ]
+    ],
+    "x": 140,
+    "y": 230,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "e7c2b4156733a00b",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "Wetter: Open-Meteo (alle 10 min)",
+    "info": "Eigene Broker-Verbindung `g6-col-weather` mit eigenem Last Will.",
+    "x": 210,
+    "y": 290,
+    "wires": []
+  },
+  {
+    "id": "79fa0c447bf1fef7",
+    "type": "inject",
+    "name": "alle 10 min",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "600",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 3,
+    "topic": "",
+    "wires": [
+      [
+        "1a56c5921bfbfcb3"
+      ]
+    ],
+    "x": 140,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "1a56c5921bfbfcb3",
+    "type": "function",
+    "name": "Wetter-URL",
+    "func": "// Open-Meteo: aktuelles Wetter am Wetterpunkt (alle 10 min oder auf Kommando)\nconst cfg = global.get('cfg');\nconst p = cfg.weatherPoint;\nconst url = cfg.apis.meteo +\n    '?latitude=' + p.lat + '&longitude=' + p.lon +\n    '&current=temperature_2m,precipitation,wind_speed_10m,weather_code' +\n    '&timezone=Europe%2FMadrid';\nreturn { url: url };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "7f501a4c6ea84ee9"
+      ]
+    ],
+    "x": 330,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "7f501a4c6ea84ee9",
+    "type": "http request",
+    "name": "Open-Meteo",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "308b77771730aa5c"
+      ]
+    ],
+    "x": 520,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "308b77771730aa5c",
+    "type": "function",
+    "name": "Wetter publizieren",
+    "func": "// Open-Meteo-Antwort -> .../live/weather (retained)\nconst cfg = global.get('cfg');\nconst c = msg.statusCode === 200 && msg.payload && msg.payload.current;\nif (!c) {\n    node.status({ fill: 'red', shape: 'ring', text: 'Wetter: HTTP ' + msg.statusCode });\n    node.warn({ hinweis: 'Unerwartete Open-Meteo-Antwort', payload: msg.payload });\n    return null;\n}\nconst w = {\n    temp: c.temperature_2m,      // °C\n    precip: c.precipitation,     // mm (letzte 15 min)\n    wind: c.wind_speed_10m,      // km/h\n    code: c.weather_code,        // WMO-Wettercode\n    ts: Date.now(),\n    source: 'open-meteo'\n};\nnode.status({ fill: 'green', shape: 'dot', text: w.temp + ' °C, ' + w.precip + ' mm, ' + w.wind + ' km/h' });\n// Heartbeat (siehe Collector BiciMAD): Status \"online\" bei jedem erfolgreichen Abruf\nreturn [[\n    { topic: cfg.prefix + '/live/weather', payload: w, qos: 0, retain: true },\n    { topic: cfg.prefix + '/system/weather', payload: 'online', qos: 1, retain: true }\n]];\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "93fe14d03e539cd0"
+      ]
+    ],
+    "x": 710,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "93fe14d03e539cd0",
+    "type": "mqtt out",
+    "name": "g6-col-weather",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "eaac539f34213b39",
+    "wires": [],
+    "x": 900,
+    "y": 330,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "3549201be00c0a3c",
+    "type": "mqtt in",
+    "name": "Kommando: neu laden",
+    "topic": "upm-dsiot-g6/move/cmd/weather/refresh",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "1a56c5921bfbfcb3"
+      ]
+    ],
+    "x": 140,
+    "y": 380,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "74bf1091faecee72",
+    "type": "comment",
+    "z": "41cdb26069d4ff9b",
+    "name": "Test-Subscriber (Wildcard #)",
+    "info": "Zeigt alle Live-Daten. Zum Testen den Debug-Node aktivieren.",
+    "x": 230,
+    "y": 440,
+    "wires": []
+  },
+  {
+    "id": "a97759565e4ffb26",
+    "type": "mqtt in",
+    "name": "Test: alle Live-Daten",
+    "topic": "upm-dsiot-g6/move/live/#",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "e511441bca2b6cbd"
+      ]
+    ],
+    "x": 160,
+    "y": 480,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "e511441bca2b6cbd",
+    "type": "debug",
+    "name": "Live-Daten",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 400,
+    "y": 480,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "dfadcb8dfe38ede2",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 540,
+    "z": "41cdb26069d4ff9b"
+  },
+  {
+    "id": "3407e2e6770a141a",
+    "type": "catch",
+    "z": "41cdb26069d4ff9b",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 540,
+    "wires": [
+      [
+        "dfadcb8dfe38ede2"
+      ]
+    ]
+  }
+]

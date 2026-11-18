@@ -1,0 +1,245 @@
+[
+  {
+    "id": "c74bf7aebad4c5d0",
+    "type": "tab",
+    "label": "Empfehlung",
+    "disabled": false,
+    "info": "Rolle A. Kombiniert Streckenprofile, BiciMAD-Live-Daten, Wetter und Collector-Status zu einer Empfehlung pro Route (`.../reco/<nutzer>/<route>`). Wechselt die Empfehlung, geht eine Warnung auf `.../alerts/<nutzer>` (QoS 1)."
+  },
+  {
+    "id": "95e2a023da7345ca",
+    "type": "comment",
+    "z": "c74bf7aebad4c5d0",
+    "name": "Eingänge (Wildcards) → Empfehlung",
+    "info": "Die Gewichte stehen in der Konfiguration (`cfg.reco`).",
+    "x": 230,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "227226d5f179f0e4",
+    "type": "function",
+    "name": "Empfehlung berechnen",
+    "func": "// ============================================================\n//  Empfehlungsdienst\n//  Eingänge (alle per Wildcard abonniert):\n//    .../profiles/+/+       Streckenprofile (retained)\n//    .../live/bicimad/+     Räder/Plätze je Station\n//    .../live/weather       aktuelles Wetter\n//    .../system/+           Status der Collectors (Birth / Close / Last Will)\n//    Takt alle 60 s         prüft, ob Daten veraltet sind\n//  Ausgänge (ein Ausgang, mehrere Nachrichten):\n//    .../reco/<nutzer>/<route>   Empfehlung + alle Fakten, QoS 1, retained\n//    .../alerts/<nutzer>         Wechsel der Empfehlung, QoS 1, nicht retained\n// ============================================================\nconst cfg = global.get('cfg');\nconst R = cfg.reco, P = cfg.prefix;\nlet st = context.get('st');\n// Zustand verwerfen, wenn sich das Präfix geändert hat (Context überlebt einen Deploy)\nif (!st || st.prefix !== P) {\n    st = { prefix: P, profiles: {}, bikes: {}, weather: null, system: {}, last: {} };\n    context.set('pending', {});\n}\nconst t = msg.topic || '';\nconst isEmpty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nconst allKeys = () => Object.keys(st.profiles);\nlet affected = [];\n\nif (t.indexOf('/profiles/') >= 0) {\n    const key = t.split('/').slice(-2).join('/');\n    if (isEmpty) {\n        delete st.profiles[key];\n        delete st.last[key];\n        context.set('st', st);\n        node.status({ fill: 'grey', shape: 'dot', text: 'Route entfernt: ' + key });\n        return [[{ topic: P + '/reco/' + key, payload: '', qos: 1, retain: true }]];\n    }\n    st.profiles[key] = msg.payload;\n    // retain=false heißt: frisch berechnet (nicht vom Broker nachgeliefert)\n    st.fresh = st.fresh || {};\n    if (!msg.retain) st.fresh[key] = true;\n    affected = [key];\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    const id = t.split('/').pop();\n    st.bikes[id] = msg.payload;\n    affected = allKeys().filter(k => st.profiles[k].from.id === id || st.profiles[k].to.id === id);\n} else if (t.endsWith('/live/weather')) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    st.weather = msg.payload;\n    affected = allKeys();\n} else if (t.indexOf('/system/') >= 0) {\n    const name = t.split('/').pop();\n    st.system[name] = String(msg.payload);\n    st.sysAt = st.sysAt || {};\n    st.sysAt[name] = Date.now();     // Zeitpunkt der letzten Statusmeldung\n    affected = allKeys();\n} else {\n    affected = allKeys();   // Takt\n}\n\nconst round = x => Math.round(x);\nconst label = { bike: 'BiciMAD', transit: 'ÖPNV', walk: 'Zu Fuß' };\n\nfunction compute(p) {\n    const now = Date.now();\n    const st = context.get('st');\n    const notes = [];\n    // Ein Collector gilt als lebendig, wenn er \"online\" meldet ODER nach seiner\n    // letzten Statusmeldung noch frische Daten geschickt hat. Das fängt den Fall ab,\n    // dass der Broker eine alte Last-Will-Nachricht erst NACH \"online\" nachliefert.\n    const sysAt = st.sysAt || {};\n    const alive = (name, ts) => (st.system[name] || '').indexOf('online') === 0 ||\n        (ts != null && ts > (sysAt[name] || 0));\n\n    // ---------- Wetter ----------\n    const w = st.weather;\n    const sysW = st.system.weather || 'unbekannt';\n    const weatherOk = !!(w && (now - w.ts) < R.weatherStaleMin * 60000 && (w.demo || alive('weather', w.ts)));\n    let rainBike = 0, rainWalk = 0, windBike = 0, tempPen = 0, weatherWhy = null;\n    if (weatherOk) {\n        if (w.precip >= R.rainHeavy) { rainBike = 2 * R.rainPenaltyBike; rainWalk = 2 * R.rainPenaltyWalk; weatherWhy = 'starker Regen'; }\n        else if (w.precip >= R.rainLight) { rainBike = R.rainPenaltyBike; rainWalk = R.rainPenaltyWalk; weatherWhy = 'Regen'; }\n        if (w.wind >= R.windStrong) windBike = R.windPenaltyBike;\n        if (w.temp < R.coldBelow || w.temp > R.hotAbove) tempPen = R.tempPenalty;\n    } else {\n        notes.push('ohne Wetterdaten (' + sysW + ')');\n    }\n\n    // ---------- BiciMAD ----------\n    // Zeit = Fußweg zur Station + Fahrt Station->Station + Ausleihen/Abgeben + Fußweg zum Ziel\n    const bike = { mode: 'bike', label: label.bike, min: 0, ok: true, why: [] };\n    const sFrom = st.bikes[p.from.id], sTo = st.bikes[p.to.id];\n    const fresh = s => s && typeof s === 'object' && (now - s.ts) < R.staleMin * 60000;\n    if (p.sameStation || !p.bike) {\n        bike.ok = false; bike.why.push('Start und Ziel liegen an derselben Station');\n    } else {\n        bike.min = p.from.walkMin + p.bike.min + R.dockMin + p.to.walkMin;\n        const legs = round(p.from.walkMin + p.to.walkMin);\n        if (legs > 0) bike.why.push('inkl. ' + legs + ' min Fußweg zu/von den Stationen');\n        if (p.from.distM > R.maxWalkToStationM) { bike.ok = false; bike.why.push('nächste Station am Start ' + p.from.distM + ' m entfernt'); }\n        if (p.to.distM > R.maxWalkToStationM) { bike.ok = false; bike.why.push('nächste Station am Ziel ' + p.to.distM + ' m entfernt'); }\n        if (!alive('bicimad', sFrom && sFrom.ts)) {\n            bike.ok = false; bike.why.push('BiciMAD-Daten nicht verfügbar (' + (st.system.bicimad || 'unbekannt') + ')');\n        } else if (!fresh(sFrom) || !fresh(sTo)) {\n            bike.ok = false; bike.why.push('Stationsdaten fehlen oder sind veraltet');\n        } else {\n            if (sFrom.bikes < R.bikeMinBikes || !sFrom.renting) { bike.ok = false; bike.why.push('keine Räder an ' + p.from.name); }\n            else bike.why.push(sFrom.bikes + ' Räder am Start');\n            if (sTo.docks < R.bikeMinDocks || !sTo.returning) { bike.ok = false; bike.why.push('kein freier Platz an ' + p.to.name); }\n            else bike.why.push(sTo.docks + ' freie Plätze am Ziel');\n        }\n        if (p.bike.ascent != null && p.bike.ascent > 0) {\n            bike.min += p.bike.ascent * R.minPerHmUp;\n            bike.why.push(round(p.bike.ascent) + ' Hm bergauf');\n        }\n        if (p.bike.cyclewayPct != null) {\n            bike.min -= R.cyclewayBonusMax * p.bike.cyclewayPct / 100;\n            bike.why.push(p.bike.cyclewayPct + ' % Radweg');\n        }\n        if (rainBike) { bike.min += rainBike; bike.why.push(weatherWhy); }\n        if (windBike) { bike.min += windBike; bike.why.push('starker Wind'); }\n        if (tempPen) { bike.min += tempPen; bike.why.push('Temperatur ' + round(w.temp) + ' °C'); }\n    }\n\n    // ---------- Zu Fuß ----------\n    const walk = { mode: 'walk', label: label.walk, min: p.walk.min + rainWalk + tempPen, ok: true, why: [p.walk.km + ' km'] };\n    if (rainWalk) walk.why.push(weatherWhy);\n\n    // ---------- ÖPNV (Schätzung) ----------\n    const transit = { mode: 'transit', label: label.transit, min: p.transit.min, ok: true,\n        why: ['Schätzung: Fußwege + Warten + Fahrt'] };\n\n    const options = [bike, transit, walk];\n    options.forEach(o => { o.min = round(o.min); });\n    const best = options.filter(o => o.ok).sort((a, b) => a.min - b.min)[0];\n    if (p.source && p.source.indexOf('Schätzung') === 0) notes.push('Streckenprofil geschätzt (ohne ORS)');\n    if (p.orsError) notes.push('ORS-Fehler: ' + p.orsError);\n\n    // Alle Fakten für die Detailansicht im Dashboard (und für andere Clients)\n    const facts = {\n        fromAddress: p.fromPoint ? p.fromPoint.label : p.from.name,\n        toAddress: p.toPoint ? p.toPoint.label : p.to.name,\n        fromStation: { id: p.from.id, name: p.from.name, distM: p.from.distM, walkMin: p.from.walkMin,\n            capacity: p.from.capacity, bikes: sFrom ? sFrom.bikes : null, docks: sFrom ? sFrom.docks : null, ts: sFrom ? sFrom.ts : null },\n        toStation: { id: p.to.id, name: p.to.name, distM: p.to.distM, walkMin: p.to.walkMin,\n            capacity: p.to.capacity, bikes: sTo ? sTo.bikes : null, docks: sTo ? sTo.docks : null, ts: sTo ? sTo.ts : null },\n        bike: p.bike, walk: p.walk, transit: p.transit, sameStation: !!p.sameStation,\n        weather: w ? { temp: w.temp, precip: w.precip, wind: w.wind, ts: w.ts, demo: !!w.demo, ok: weatherOk } : null,\n        // angezeigter Status = tatsächlich erkannter Zustand (siehe alive)\n        sources: {\n            bicimad: alive('bicimad', sFrom && sFrom.ts) ? 'online' : (st.system.bicimad || 'unbekannt'),\n            weather: (w && alive('weather', w.ts)) ? 'online' : sysW,\n            profile: p.source\n        }\n    };\n    return {\n        user: p.user, route: p.route, name: p.name,\n        from: facts.fromAddress, to: facts.toAddress,\n        best: best.mode, bestLabel: best.label, bestMin: best.min,\n        summary: best.label + ' · ' + best.min + ' min',\n        options: options, notes: notes, facts: facts,\n        updated: new Date().toISOString()\n    };\n}\n\n// Bündeln (Debounce): Kommen mehrere Updates fast gleichzeitig an\n// (z. B. Station + Wetter), wird nur EINMAL nach 1 s gerechnet und gesendet.\nconst pending = context.get('pending') || {};\naffected.forEach(k => { pending[k] = true; });\ncontext.set('pending', pending);\ncontext.set('st', st);\nif (!context.get('timer')) {\n    context.set('timer', true);\n    setTimeout(flushPending, 1000);\n}\nreturn null;\n\nfunction flushPending() {\n    context.set('timer', false);\n    const keys = Object.keys(context.get('pending') || {});\n    context.set('pending', {});\n    const s = context.get('st');\n    const out = [];\n    for (const key of keys) {\n        const p = s.profiles[key];\n        if (!p) continue;\n        const reco = compute(p);\n        // Signatur ohne Zeitstempel: nur senden, wenn sich inhaltlich etwas geändert hat\n        const f = reco.facts;\n        const sig = JSON.stringify([reco.best, reco.options, reco.notes,\n            f.fromStation.bikes, f.fromStation.docks, f.toStation.bikes, f.toStation.docks,\n            f.weather && [f.weather.temp, f.weather.precip, f.weather.wind, f.weather.ok], f.sources]);\n        const prev = s.last[key];\n        if (prev && prev.sig === sig) continue;\n        out.push({ topic: P + '/reco/' + key, payload: reco, qos: 1, retain: true });\n\n        const isNewRoute = !prev && s.fresh && s.fresh[key];\n        if (s.fresh) delete s.fresh[key];\n        if ((prev && prev.best !== reco.best) || isNewRoute) {\n            let text;\n            if (isNewRoute) {\n                text = 'Route \"' + reco.name + '\" ist aktiv: aktuell ' + reco.summary;\n            } else {\n                const old = reco.options.find(o => o.mode === prev.best);\n                const neg = old ? old.why.filter(x => /keine|kein |nicht|veraltet|Regen|Wind|Temperatur|entfernt|derselben/.test(x)) : [];\n                text = 'Route \"' + reco.name + '\": jetzt ' + reco.summary + ' statt ' + label[prev.best] +\n                    (neg.length ? ' (' + neg.join(', ') + ')' : '');\n            }\n            out.push({ topic: P + '/alerts/' + p.user, payload: text, qos: 1, retain: false });\n        }\n        s.last[key] = { sig: sig, best: reco.best };\n    }\n    context.set('st', s);\n    node.status({ fill: 'green', shape: 'dot',\n        text: Object.keys(s.profiles).length + ' Routen, ' + out.length + ' Nachrichten, ' + new Date().toLocaleTimeString('de-DE') });\n    if (out.length) node.send([out]);\n}\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "ce2c74e0f8fc9ce4"
+      ]
+    ],
+    "x": 520,
+    "y": 200,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "57c517c8000fe4e6",
+    "type": "mqtt in",
+    "name": "Profile",
+    "topic": "upm-dsiot-g6/move/profiles/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": false,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 100,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "05c19190c4b0ec22",
+    "type": "mqtt in",
+    "name": "BiciMAD je Station",
+    "topic": "upm-dsiot-g6/move/live/bicimad/+",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 150,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "ca2a6ba60dbb5d3d",
+    "type": "mqtt in",
+    "name": "Wetter",
+    "topic": "upm-dsiot-g6/move/live/weather",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 200,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "8b119ec3b69b2c14",
+    "type": "mqtt in",
+    "name": "Collector-Status",
+    "topic": "upm-dsiot-g6/move/system/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 250,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "620bc7d5860f3f93",
+    "type": "inject",
+    "name": "Takt 60 s (Daten veraltet?)",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "60",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 15,
+    "topic": "tick",
+    "wires": [
+      [
+        "227226d5f179f0e4"
+      ]
+    ],
+    "x": 200,
+    "y": 300,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "ce2c74e0f8fc9ce4",
+    "type": "mqtt out",
+    "name": "g6-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 760,
+    "y": 200,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "a79d34115c423729",
+    "type": "comment",
+    "z": "c74bf7aebad4c5d0",
+    "name": "So sieht es das Handy",
+    "info": "MyMQTT: `.../alerts/<nutzer>` und `.../reco/<nutzer>/#` abonnieren.",
+    "x": 200,
+    "y": 360,
+    "wires": []
+  },
+  {
+    "id": "c0837af9566ca0e6",
+    "type": "mqtt in",
+    "name": "Warnungen",
+    "topic": "upm-dsiot-g6/move/alerts/#",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "38f926fe56d05e1b"
+      ]
+    ],
+    "x": 180,
+    "y": 400,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "38f926fe56d05e1b",
+    "type": "debug",
+    "name": "Warnungen",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "false",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 420,
+    "y": 400,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "c191860551201ba6",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 460,
+    "z": "c74bf7aebad4c5d0"
+  },
+  {
+    "id": "26b3029ce4b5de39",
+    "type": "catch",
+    "z": "c74bf7aebad4c5d0",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 460,
+    "wires": [
+      [
+        "c191860551201ba6"
+      ]
+    ]
+  }
+]

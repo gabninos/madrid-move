@@ -1,0 +1,1360 @@
+[
+  {
+    "id": "cf931b46039477f7",
+    "type": "tab",
+    "label": "Dashboard",
+    "disabled": false,
+    "info": "Rolle B. Dashboard 2.0 unter http://localhost:1880/dashboard mit drei Seiten: Empfehlungen, Routen verwalten, System & Demo."
+  },
+  {
+    "id": "4e73483f5a10193d",
+    "type": "comment",
+    "z": "cf931b46039477f7",
+    "name": "Seite \"Empfehlungen\": Route wählen → Empfehlung + alle Fakten",
+    "info": "Die Function **Detailansicht** baut für jede Route die komplette Ansicht (HTML). Das Template-Widget zeigt die Route, die im jeweiligen Browser gewählt ist (Auswahl wird im Browser gespeichert).",
+    "x": 260,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "7a666f76cb262fa8",
+    "type": "mqtt in",
+    "name": "Empfehlungen",
+    "topic": "upm-dsiot-g6/move/reco/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "7a24b4f24c3b3da1",
+        "a83333ddf90a5dfb"
+      ]
+    ],
+    "x": 140,
+    "y": 80,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "7a24b4f24c3b3da1",
+    "type": "function",
+    "name": "Detailansicht",
+    "func": "// .../reco/+/+ -> Detailansicht aller Routen.\n// Für jede Route wird hier die komplette Ansicht als HTML gebaut. Das Template-Widget\n// im Dashboard zeigt davon die Route, die im jeweiligen Browser ausgewählt ist.\n// (Die Auswahl merkt sich jeder Browser selbst, Nutzer stören sich also nicht.)\nconst cfg = global.get('cfg');\nlet recos = context.get('recos');\nif (!recos || recos.__prefix !== cfg.prefix) recos = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') delete recos[key];\nelse recos[key] = msg.payload;\ncontext.set('recos', recos);\n\n// Texte aus MQTT-Nachrichten immer maskieren (öffentlicher Broker!)\nconst esc = s => String(s == null ? '' : s).replace(/[&<>\"']/g,\n    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\nconst time = ts => ts ? new Date(ts).toLocaleTimeString('de-DE',\n    { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '–';\nconst icon = { bike: '🚲', transit: '🚇', walk: '🚶' };\nconst row = (k, v) => '<tr><td>' + k + '</td><td>' + v + '</td></tr>';\n\nfunction render(r) {\n    const f = r.facts || {};\n    const best = r.options.find(o => o.mode === r.best) || { why: [] };\n    let h = '';\n    // --- Empfehlung\n    h += '<div class=\"mm-hero mm-' + r.best + '\"><div class=\"mm-hero-icon\">' + icon[r.best] + '</div><div>' +\n        '<div class=\"mm-hero-label\">Empfehlung für „' + esc(r.name) + '“</div>' +\n        '<div class=\"mm-hero-title\">' + esc(r.bestLabel) + ' · ' + r.bestMin + ' min</div>' +\n        '<div class=\"mm-hero-why\">' + esc(best.why.join(' · ')) + '</div></div></div>';\n    h += '<div class=\"mm-route\">' + esc(f.fromAddress) + ' → ' + esc(f.toAddress) + '</div>';\n\n    // --- Vergleich der Optionen\n    h += '<div class=\"mm-h\">Vergleich</div><div class=\"mm-cards\">';\n    for (const o of r.options) {\n        h += '<div class=\"mm-card' + (o.mode === r.best ? ' mm-best' : '') + (o.ok ? '' : ' mm-off') + '\">' +\n            '<div class=\"mm-card-top\"><span>' + icon[o.mode] + ' ' + esc(o.label) + '</span><b>' +\n            (o.ok ? o.min + ' min' : 'nicht möglich') + '</b></div><ul>' +\n            o.why.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>';\n    }\n    h += '</div>';\n\n    // --- Strecke\n    const fs = f.fromStation || {}, ts = f.toStation || {}, b = f.bike;\n    h += '<div class=\"mm-h\">Strecke</div><table class=\"mm-table\">';\n    h += row('Start', esc(f.fromAddress));\n    h += row('Station am Start', esc(fs.name) + ' <span class=\"mm-dim\">(' + fs.distM + ' m, ca. ' + Math.round(fs.walkMin) + ' min zu Fuß)</span>');\n    if (b && !f.sameStation) {\n        h += row('Radstrecke', b.km + ' km · ' + Math.round(b.min) + ' min Fahrt <span class=\"mm-dim\">(Station → Station)</span>');\n        h += row('Höhenmeter', b.ascent != null ? '↑ ' + Math.round(b.ascent) + ' m · ↓ ' + Math.round(b.descent) + ' m' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n        h += row('Radweganteil', b.cyclewayPct != null ? b.cyclewayPct + ' %' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n        h += row('Steile Abschnitte (ab 7 %)', b.steepPct != null ? b.steepPct + ' % der Strecke' : '<span class=\"mm-dim\">unbekannt (ohne ORS)</span>');\n    } else {\n        h += row('Radstrecke', '<span class=\"mm-dim\">entfällt (Start und Ziel an derselben Station)</span>');\n    }\n    h += row('Station am Ziel', esc(ts.name) + ' <span class=\"mm-dim\">(' + ts.distM + ' m, ca. ' + Math.round(ts.walkMin) + ' min zu Fuß)</span>');\n    h += row('Ziel', esc(f.toAddress));\n    h += row('Fußweg komplett', f.walk.km + ' km · ' + Math.round(f.walk.min) + ' min');\n    h += row('ÖPNV', Math.round(f.transit.min) + ' min <span class=\"mm-dim\">(Schätzung)</span>');\n    h += '</table>';\n\n    // --- Live-Lage\n    const w = f.weather;\n    h += '<div class=\"mm-h\">Live-Lage</div><table class=\"mm-table\">';\n    h += row('Räder an ' + esc(fs.name), fs.bikes != null ? '<b>' + fs.bikes + '</b> von ' + fs.capacity + ' <span class=\"mm-dim\">(Stand ' + time(fs.ts) + ')</span>' : '<span class=\"mm-dim\">keine Daten</span>');\n    h += row('Freie Plätze an ' + esc(ts.name), ts.docks != null ? '<b>' + ts.docks + '</b> von ' + ts.capacity + ' <span class=\"mm-dim\">(Stand ' + time(ts.ts) + ')</span>' : '<span class=\"mm-dim\">keine Daten</span>');\n    h += row('Wetter', w && w.ok ? w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind <span class=\"mm-dim\">(Stand ' + time(w.ts) + (w.demo ? ', DEMO' : '') + ')</span>' : '<span class=\"mm-dim\">keine aktuellen Daten</span>');\n    const srcCls = s => String(s).indexOf('online') === 0 ? 'mm-ok' : 'mm-bad';\n    h += row('Datenquellen', 'BiciMAD: <span class=\"' + srcCls(f.sources.bicimad) + '\">' + esc(f.sources.bicimad) + '</span> · Wetter: <span class=\"' + srcCls(f.sources.weather) + '\">' + esc(f.sources.weather) + '</span> · Profil: ' + esc(f.sources.profile));\n    h += '</table>';\n\n    if (r.notes && r.notes.length) h += '<div class=\"mm-notes\">ℹ ' + r.notes.map(esc).join('<br>ℹ ') + '</div>';\n    h += '<div class=\"mm-foot\">Stand: ' + time(Date.parse(r.updated)) + ' · Nutzer: ' + esc(r.user) + '</div>';\n    return h;\n}\n\nconst routes = Object.keys(recos).filter(k => k !== '__prefix').sort().map(k => {\n    const r = recos[k];\n    return { key: k, label: r.user + ' – ' + r.name, html: render(r) };\n});\nreturn { payload: { routes: routes } };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "ae89ea10c631b485"
+      ]
+    ],
+    "x": 330,
+    "y": 80,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "ae89ea10c631b485",
+    "type": "ui-template",
+    "name": "Route & Empfehlung",
+    "group": "b3714cda0f816020",
+    "page": "",
+    "ui": "",
+    "order": 1,
+    "width": "12",
+    "height": "0",
+    "head": "",
+    "format": "<template>\n    <div class=\"mm\">\n        <v-select v-model=\"selected\" :items=\"routes\" item-title=\"label\" item-value=\"key\"\n            label=\"Route wählen\" variant=\"outlined\" density=\"comfortable\" hide-details\n            no-data-text=\"Noch keine Routen – lege unter „Routen verwalten“ eine an\"></v-select>\n        <div v-if=\"current\" class=\"mm-body\" v-html=\"current.html\"></div>\n        <div v-else class=\"mm-empty\">Wähle oben eine Route, um Empfehlung und alle Fakten zu sehen.</div>\n    </div>\n</template>\n\n<script>\nexport default {\n    data () {\n        return { selected: null }\n    },\n    computed: {\n        routes () {\n            return (this.msg && this.msg.payload && this.msg.payload.routes) || []\n        },\n        current () {\n            return this.routes.find(r => r.key === this.selected)\n        }\n    },\n    watch: {\n        // Auswahl pro Browser merken (nicht für andere Nutzer sichtbar)\n        selected (v) {\n            try { window.localStorage.setItem('madridmove-route', v || '') } catch (e) {}\n        }\n    },\n    mounted () {\n        try { this.selected = window.localStorage.getItem('madridmove-route') || null } catch (e) {}\n    }\n}\n</script>\n\n<style>\n.mm { width: 100%; }\n.mm-body { margin-top: 16px; }\n.mm-empty { margin-top: 16px; color: #6b7280; }\n.mm-hero { display: flex; gap: 16px; align-items: center; padding: 16px 18px; border-radius: 10px; color: #fff; }\n.mm-hero.mm-bike { background: #1f6f50; }\n.mm-hero.mm-transit { background: #1d4f91; }\n.mm-hero.mm-walk { background: #7a4e14; }\n.mm-hero-icon { font-size: 40px; line-height: 1; }\n.mm-hero-label { font-size: 13px; opacity: .85; }\n.mm-hero-title { font-size: 26px; font-weight: 700; margin: 2px 0; }\n.mm-hero-why { font-size: 14px; opacity: .92; }\n.mm-route { margin: 10px 2px 0; color: #374151; font-size: 14px; }\n.mm-h { margin: 20px 0 8px; font-weight: 700; font-size: 15px; color: #111827; }\n.mm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }\n.mm-card { border: 1px solid #dde1e4; border-radius: 8px; padding: 10px 12px; background: #fff; }\n.mm-card.mm-best { border: 2px solid #1f6f50; background: #f1f8f4; }\n.mm-card.mm-off { opacity: .6; }\n.mm-card-top { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 4px; }\n.mm-card ul { margin: 0; padding-left: 18px; font-size: 13px; color: #4b5563; }\n.mm-table { width: 100%; border-collapse: collapse; font-size: 14px; }\n.mm-table td { padding: 6px 4px; border-bottom: 1px solid #eef0f2; vertical-align: top; }\n.mm-table td:first-child { color: #6b7280; width: 38%; }\n.mm-dim { color: #9ca3af; }\n.mm-ok { color: #1f6f50; font-weight: 600; }\n.mm-bad { color: #b42318; font-weight: 600; }\n.mm-notes { margin-top: 14px; padding: 10px 12px; background: #fff8e6; border-radius: 8px; font-size: 13px; color: #6b4e00; }\n.mm-foot { margin-top: 12px; font-size: 12px; color: #9ca3af; }\n</style>\n",
+    "storeOutMessages": true,
+    "passthru": false,
+    "resendOnRefresh": true,
+    "templateScope": "local",
+    "className": "",
+    "wires": [
+      []
+    ],
+    "x": 520,
+    "y": 80,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a83333ddf90a5dfb",
+    "type": "function",
+    "name": "Übersichtstabelle",
+    "func": "// .../reco/+/+ -> Tabelle aller Empfehlungen (eine Zeile pro Route)\nconst cfg = global.get('cfg');\nlet rows = context.get('rows');\nif (!rows || rows.__prefix !== cfg.prefix) rows = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') {\n    delete rows[key];\n} else {\n    const r = msg.payload;\n    const o = m => r.options.find(x => x.mode === m);\n    const fmt = x => !x ? '–' : (x.ok ? x.min + ' min' : 'nicht möglich');\n    const best = o(r.best);\n    rows[key] = {\n        'Nutzer': r.user,\n        'Route': r.name,\n        'Von → Nach': r.from + ' → ' + r.to,\n        'Empfehlung': r.bestLabel + ' (' + r.bestMin + ' min)',\n        'BiciMAD': fmt(o('bike')),\n        'ÖPNV*': fmt(o('transit')),\n        'Zu Fuß': fmt(o('walk')),\n        'Begründung': (best ? best.why : []).concat(r.notes || []).join(', '),\n        'Stand': new Date(r.updated).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' })\n    };\n}\ncontext.set('rows', rows);\nmsg.payload = Object.keys(rows).filter(k => k !== '__prefix').map(k => rows[k]).sort((a, b) =>\n    (a['Nutzer'] + a['Route']).localeCompare(b['Nutzer'] + b['Route']));\nreturn msg;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "3ab4324b059bad48"
+      ]
+    ],
+    "x": 330,
+    "y": 130,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "height": "0",
+    "id": "3ab4324b059bad48",
+    "type": "ui-table",
+    "name": "Alle Routen",
+    "label": "",
+    "maxrows": 0,
+    "passthru": false,
+    "autocols": true,
+    "showSearch": true,
+    "deselect": true,
+    "selectionType": "none",
+    "columns": null,
+    "mobileBreakpoint": "sm",
+    "mobileBreakpointType": "defaults",
+    "action": "replace",
+    "wires": [
+      []
+    ],
+    "group": "ecc9c7ceed7e0af6",
+    "order": 1,
+    "width": "12",
+    "className": "",
+    "x": 520,
+    "y": 130,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "692ec58e820e9839",
+    "type": "ui-text",
+    "name": "* ÖPNV-Zeiten sind Schätzungen (Fußwege + Warten + Fahrt)",
+    "label": "* ÖPNV-Zeiten sind Schätzungen (Fußwege + Warten + Fahrt)",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "ecc9c7ceed7e0af6",
+    "order": 2,
+    "width": "12",
+    "height": "0",
+    "className": "",
+    "x": 740,
+    "y": 130,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "5ab4595dc07f4192",
+    "type": "mqtt in",
+    "name": "Warnungen",
+    "topic": "upm-dsiot-g6/move/alerts/#",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "79c72efc7dc35454"
+      ]
+    ],
+    "x": 140,
+    "y": 180,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "79c72efc7dc35454",
+    "type": "function",
+    "name": "Popup-Text",
+    "func": "// .../alerts/<nutzer> -> Popup im Dashboard\nconst user = msg.topic.split('/').pop();\nreturn { payload: user + ': ' + msg.payload };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "8743f9032f6b5fd4"
+      ]
+    ],
+    "x": 330,
+    "y": 180,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "8743f9032f6b5fd4",
+    "type": "ui-notification",
+    "ui": "85facd4bcc49a099",
+    "position": "top right",
+    "colorDefault": true,
+    "color": "",
+    "displayTime": "6",
+    "showCountdown": true,
+    "outputs": 1,
+    "allowDismiss": true,
+    "dismissText": "Schließen",
+    "allowConfirm": false,
+    "confirmText": "OK",
+    "showInput": false,
+    "inputType": "text",
+    "inputLabel": "",
+    "raw": false,
+    "className": "",
+    "name": "Warnung",
+    "wires": [
+      []
+    ],
+    "x": 520,
+    "y": 180,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "969ebbd97eb65c0e",
+    "type": "comment",
+    "z": "cf931b46039477f7",
+    "name": "Seite \"Routen verwalten\": Adressen → Geocoding → Route",
+    "info": "Jedes Feld sendet mit eigenem msg.topic an **Formular**. Beim Anlegen werden Start- und Zieladresse nacheinander per Nominatim (OpenStreetMap) in Koordinaten umgewandelt (max. 1 Anfrage pro Sekunde), dann wird die Route retained veröffentlicht.",
+    "x": 260,
+    "y": 240,
+    "wires": []
+  },
+  {
+    "id": "5863149a8965c7e0",
+    "type": "function",
+    "name": "Formular",
+    "func": "// Formular \"Route anlegen / löschen\". Jedes Eingabefeld sendet mit eigenem msg.topic.\n// Ausgang 1: MQTT (Route löschen) | 2: Statustext | 3: Geocoding der Adressen starten\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst f = flow.get('form') || {};\nconst slug = s => String(s || '').toLowerCase().normalize('NFD')\n    .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '').slice(0, 30);\n\nswitch (msg.topic) {\n    case 'user': f.user = msg.payload; break;\n    case 'name': f.name = msg.payload; break;\n    case 'fromAddr': f.fromAddr = msg.payload; break;\n    case 'toAddr': f.toAddr = msg.payload; break;\n    case 'delSel': f.del = msg.payload; break;\n    case 'create': {\n        const u = slug(f.user), r = slug(f.name);\n        const a = String(f.fromAddr || '').trim(), b = String(f.toAddr || '').trim();\n        if (!u || !r || !a || !b) return [null, { payload: '⚠ Bitte Name, Routenname, Start- und Zieladresse ausfüllen.' }, null];\n        if (a.toLowerCase() === b.toLowerCase()) return [null, { payload: '⚠ Start und Ziel sind gleich.' }, null];\n        const existing = Object.keys(flow.get('routeKeys') || {});\n        const mine = existing.filter(k => k.split('/')[0] === u && k !== u + '/' + r);\n        if (mine.length >= cfg.reco.maxRoutesPerUser) {\n            return [null, { payload: '⚠ Höchstens ' + cfg.reco.maxRoutesPerUser + ' Routen pro Nutzer.' }, null];\n        }\n        flow.set('form', f);\n        const job = { user: u, routeId: r, name: f.name, fromAddr: a, toAddr: b, step: 'from' };\n        return [null, { payload: '🔎 Suche Adressen …' }, { job: job }];\n    }\n    case 'delete': {\n        if (!f.del) return [null, { payload: '⚠ Bitte eine Route zum Löschen wählen.' }, null];\n        const key = f.del;\n        f.del = null;\n        flow.set('form', f);\n        // Leere Retained-Nachricht = gespeicherte Nachricht auf dem Broker löschen\n        return [\n            { topic: P + '/routes/' + key, payload: '', qos: 1, retain: true },\n            { payload: '🗑 Route ' + key + ' gelöscht.' },\n            null\n        ];\n    }\n}\nflow.set('form', f);\nreturn null;\n",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "3f7518d6d1c8eb14"
+      ],
+      [
+        "1ef55eb0d8e799a3"
+      ],
+      [
+        "16a6605892faba56"
+      ]
+    ],
+    "x": 600,
+    "y": 380,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "213208492591d653",
+    "type": "ui-text-input",
+    "name": "Dein Name (Kurzname)",
+    "label": "Dein Name (Kurzname)",
+    "topic": "user",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 290,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "7d25ee7b1c5647aa",
+    "type": "ui-text-input",
+    "name": "Routenname, z. B. Zur Uni",
+    "label": "Routenname, z. B. Zur Uni",
+    "topic": "name",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 330,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "7782080cde312c22",
+    "type": "ui-text-input",
+    "name": "Startadresse, z. B. Calle de Alcalá 50",
+    "label": "Startadresse, z. B. Calle de Alcalá 50",
+    "topic": "fromAddr",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 370,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "33d52a5b93e24781",
+    "type": "ui-text-input",
+    "name": "Zieladresse, z. B. Calle de Alan Turing",
+    "label": "Zieladresse, z. B. Calle de Alan Turing",
+    "topic": "toAddr",
+    "topicType": "str",
+    "mode": "text",
+    "tooltip": "",
+    "delay": 300,
+    "passthru": false,
+    "sendOnDelay": true,
+    "sendOnBlur": true,
+    "sendOnEnter": true,
+    "clearable": false,
+    "sendOnClear": false,
+    "icon": "",
+    "iconPosition": "left",
+    "iconInnerPosition": "inside",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 410,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "3e38c3c0efe8734b",
+    "type": "ui-button",
+    "name": "Route anlegen",
+    "label": "Route anlegen",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "plus",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "create",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "b84763072e254742",
+    "order": 5,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 450,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a7a0d0a4fdc5706c",
+    "type": "ui-dropdown",
+    "name": "Route",
+    "label": "Route",
+    "tooltip": "",
+    "passthru": false,
+    "multiple": false,
+    "chips": false,
+    "clearable": false,
+    "options": [
+      {
+        "label": "(lädt …)",
+        "value": ""
+      }
+    ],
+    "payload": "",
+    "topic": "delSel",
+    "topicType": "str",
+    "typeIsComboBox": true,
+    "msgTrigger": "onChange",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "660b0051cef2c830",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 490,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "7cd9abd4ed639dec",
+    "type": "ui-button",
+    "name": "Route löschen",
+    "label": "Route löschen",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "delete",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "delete",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "5863149a8965c7e0"
+      ]
+    ],
+    "group": "660b0051cef2c830",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 360,
+    "y": 530,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "3f7518d6d1c8eb14",
+    "type": "mqtt out",
+    "name": "g6-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 1300,
+    "y": 330,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "1ef55eb0d8e799a3",
+    "type": "ui-text",
+    "name": "Status",
+    "label": "Status",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "b84763072e254742",
+    "order": 6,
+    "width": "6",
+    "height": "0",
+    "className": "",
+    "x": 1300,
+    "y": 430,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "16a6605892faba56",
+    "type": "function",
+    "name": "Geocoding-Anfrage",
+    "func": "// Baut die Geocoding-Anfrage für die aktuelle Adresse (Start oder Ziel).\n// Nominatim (OpenStreetMap): Suche begrenzt auf das Stadtgebiet von Madrid.\nconst cfg = global.get('cfg');\nconst job = msg.job;\nlet q = job.step === 'from' ? job.fromAddr : job.toAddr;\nif (!/madrid/i.test(q)) q += ', Madrid';\nconst url = cfg.apis.geocode + '?format=jsonv2&limit=1&countrycodes=es&bounded=1' +\n    '&viewbox=' + cfg.cityViewbox + '&q=' + encodeURIComponent(q);\nreturn {\n    job: job,\n    url: url,\n    headers: { 'User-Agent': cfg.apis.geocodeUserAgent, 'Accept-Language': 'es' }\n};\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "155274b118a78b12"
+      ]
+    ],
+    "x": 820,
+    "y": 530,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "155274b118a78b12",
+    "type": "delay",
+    "name": "max. 1 Anfrage / s",
+    "pauseType": "rate",
+    "timeout": "5",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1.2",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "allowrate": false,
+    "outputs": 1,
+    "wires": [
+      [
+        "374e7a393c19829d"
+      ]
+    ],
+    "x": 1010,
+    "y": 530,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "374e7a393c19829d",
+    "type": "http request",
+    "name": "Nominatim",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "wires": [
+      [
+        "a6f8086352f51218"
+      ]
+    ],
+    "x": 1180,
+    "y": 530,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a6f8086352f51218",
+    "type": "function",
+    "name": "Adresse auswerten",
+    "func": "// Wertet die Geocoding-Antwort aus.\n// Ausgang 1: nächste Adresse suchen | 2: Route veröffentlichen (MQTT) | 3: Statustext\nconst cfg = global.get('cfg');\nconst job = msg.job;\nconst hit = msg.statusCode === 200 && Array.isArray(msg.payload) && msg.payload[0];\nconst addr = job.step === 'from' ? job.fromAddr : job.toAddr;\nif (!hit) {\n    const why = msg.statusCode === 200 ? 'nicht gefunden' : 'Fehler beim Geocoding (HTTP ' + msg.statusCode + ')';\n    node.status({ fill: 'red', shape: 'ring', text: why + ': ' + addr });\n    return [null, null, { payload: '⚠ Adresse ' + why + ': \"' + addr + '\". Bitte genauer angeben, z. B. \"Calle de Alcalá 50\".' }];\n}\n// Kurzer Name: die ersten zwei bis drei Teile der Adresse\nconst parts = String(hit.display_name || addr).split(',').map(s => s.trim());\nconst label = parts.slice(0, /^\\d+$/.test(parts[0]) ? 3 : 2).join(', ');\nconst point = { address: addr, label: label, lat: Number(hit.lat), lon: Number(hit.lon) };\nif (job.step === 'from') {\n    job.from = point;\n    job.step = 'to';\n    node.status({ fill: 'blue', shape: 'dot', text: 'Start gefunden: ' + label });\n    return [{ job: job }, null, null];\n}\njob.to = point;\nnode.status({ fill: 'green', shape: 'dot', text: 'Route ' + job.user + '/' + job.routeId });\nconst route = { name: job.name, from: job.from, to: point, createdAt: new Date().toISOString() };\nreturn [null,\n    { topic: cfg.prefix + '/routes/' + job.user + '/' + job.routeId, payload: route, qos: 1, retain: true },\n    { payload: '✔ Route ' + job.user + '/' + job.routeId + ' angelegt: ' + job.from.label + ' → ' + label +\n        '. Aufs Handy: ' + cfg.prefix + '/alerts/' + job.user }];\n",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "16a6605892faba56"
+      ],
+      [
+        "3f7518d6d1c8eb14"
+      ],
+      [
+        "1ef55eb0d8e799a3"
+      ]
+    ],
+    "x": 1100,
+    "y": 600,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "4ef83f35dca8963c",
+    "type": "mqtt in",
+    "name": "Routen",
+    "topic": "upm-dsiot-g6/move/routes/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "cf81e327680124eb"
+      ]
+    ],
+    "x": 140,
+    "y": 680,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "cf81e327680124eb",
+    "type": "function",
+    "name": "Routenliste",
+    "func": "// .../routes/+/+ -> Liste aller Routen (für \"Route löschen\" und die Obergrenze)\nconst cfg = global.get('cfg');\nlet routes = flow.get('routeKeys');\nif (!routes || routes.__prefix !== cfg.prefix) routes = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty) delete routes[key];\nelse if (typeof msg.payload === 'object') routes[key] = msg.payload.name || key;\nflow.set('routeKeys', routes);\nconst options = Object.keys(routes).filter(k => k !== '__prefix').sort().map(k => ({ label: k + ' – ' + routes[k], value: k }));\nreturn { ui_update: { options: options.length ? options : [{ label: '(keine Routen)', value: '' }] } };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "a7a0d0a4fdc5706c"
+      ]
+    ],
+    "x": 360,
+    "y": 680,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "16f1765b3588c467",
+    "type": "comment",
+    "z": "cf931b46039477f7",
+    "name": "Seite \"System & Demo\"",
+    "info": "",
+    "x": 200,
+    "y": 760,
+    "wires": []
+  },
+  {
+    "id": "e5887a769c956e87",
+    "type": "mqtt in",
+    "name": "Collector-Status",
+    "topic": "upm-dsiot-g6/move/system/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "fc9388be0aaf8c1f"
+      ]
+    ],
+    "x": 140,
+    "y": 800,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "fc9388be0aaf8c1f",
+    "type": "function",
+    "name": "Statustabelle",
+    "func": "// .../system/+ -> Tabelle \"Datenquellen\"\nconst cfg = global.get('cfg');\nlet rows = context.get('rows');\nif (!rows || rows.__prefix !== cfg.prefix) rows = { __prefix: cfg.prefix };\nconst name = msg.topic.split('/').pop();\nrows[name] = {\n    'Quelle': name,\n    'Status': String(msg.payload),\n    'Seit': new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' })\n};\ncontext.set('rows', rows);\nreturn { payload: Object.keys(rows).filter(k => k !== '__prefix').map(k => rows[k]) };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "4d5787333495d484"
+      ]
+    ],
+    "x": 330,
+    "y": 800,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "height": "0",
+    "id": "4d5787333495d484",
+    "type": "ui-table",
+    "name": "Datenquellen",
+    "label": "",
+    "maxrows": 0,
+    "passthru": false,
+    "autocols": true,
+    "showSearch": true,
+    "deselect": true,
+    "selectionType": "none",
+    "columns": null,
+    "mobileBreakpoint": "sm",
+    "mobileBreakpointType": "defaults",
+    "action": "replace",
+    "wires": [
+      []
+    ],
+    "group": "92cb90a6fb1216b1",
+    "order": 1,
+    "width": "6",
+    "className": "",
+    "x": 520,
+    "y": 800,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "cb63e40d7095b3f9",
+    "type": "mqtt in",
+    "name": "Wetter",
+    "topic": "upm-dsiot-g6/move/live/weather",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "c0bb66e34aebe6ae"
+      ]
+    ],
+    "x": 140,
+    "y": 850,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "c0bb66e34aebe6ae",
+    "type": "function",
+    "name": "Wettertext",
+    "func": "// .../live/weather -> Textzeile\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst t = new Date(w.ts).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' });\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm Regen · ' + w.wind + ' km/h Wind · ' + t + (w.demo ? ' (DEMO)' : '') };\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "0c0addcf953bd994"
+      ]
+    ],
+    "x": 330,
+    "y": 850,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "0c0addcf953bd994",
+    "type": "ui-text",
+    "name": "Aktuell",
+    "label": "Aktuell",
+    "format": "{{msg.payload}}",
+    "layout": "row-left",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "wrapText": true,
+    "value": "payload",
+    "valueType": "msg",
+    "wires": [],
+    "group": "a8c68267a6a734e3",
+    "order": 1,
+    "width": "6",
+    "height": "0",
+    "className": "",
+    "x": 520,
+    "y": 850,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "e9a5bb38b5fe76e2",
+    "type": "function",
+    "name": "Demo",
+    "func": "// Demo-Schalter: löst Situationen auf Knopfdruck aus (Nachrichten NICHT retained)\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nconst now = Date.now();\nswitch (msg.topic) {\n    case 'rain':\n        return [[{ topic: P + '/live/weather', qos: 0, retain: false,\n            payload: { temp: 11, precip: 3.0, wind: 12, code: 65, ts: now, demo: true, source: 'demo' } }]];\n    case 'empty': {\n        const dp = flow.get('demoProfiles') || {};\n        const profiles = Object.keys(dp).filter(k => k !== '__prefix').map(k => dp[k]);\n        const ids = {};\n        profiles.forEach(p => { ids[p.from.id] = p.from.capacity || 20; });\n        return [Object.keys(ids).map(id => ({\n            topic: P + '/live/bicimad/' + id, qos: 0, retain: false,\n            payload: { bikes: 0, docks: ids[id], renting: true, returning: true, ts: now, demo: true }\n        }))];\n    }\n    case 'reset':\n        // Collectors senden beim nächsten Abruf wieder echte Werte\n        return [[\n            { topic: P + '/cmd/bicimad/refresh', payload: 'refresh', qos: 1, retain: false },\n            { topic: P + '/cmd/weather/refresh', payload: 'refresh', qos: 1, retain: false }\n        ]];\n    case 'demoroutes': {\n        // Drei Beispielrouten für den Nutzer \"demo\" (Orte mit Koordinaten, ohne Geocoding)\n        const mk = (id, name, a, b) => ({\n            topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n            payload: { name: name, from: a, to: b, createdAt: new Date().toISOString() }\n        });\n        return [[\n            mk('sol-moncloa', 'Sol → Moncloa', { label: 'Puerta del Sol', lat: 40.4169, lon: -3.7035 }, { label: 'Moncloa', lat: 40.4352, lon: -3.7190 }),\n            mk('atocha-retiro', 'Atocha → Retiro', { label: 'Estación de Atocha', lat: 40.4066, lon: -3.6892 }, { label: 'Puerta de Alcalá', lat: 40.4199, lon: -3.6887 }),\n            mk('moncloa-uni', 'Moncloa → Ciudad Universitaria', { label: 'Moncloa', lat: 40.4352, lon: -3.7190 }, { label: 'Ciudad Universitaria', lat: 40.4437, lon: -3.7276 })\n        ]];\n    }\n}\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      [
+        "48c791825beaedd7"
+      ]
+    ],
+    "x": 620,
+    "y": 960,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "d31f3a03d5381bac",
+    "type": "ui-button",
+    "name": "Demo-Routen anlegen (Nutzer \"demo\")",
+    "label": "Demo-Routen anlegen (Nutzer \"demo\")",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "map",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "demoroutes",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 910,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "bf3423bdc0536e51",
+    "type": "ui-button",
+    "name": "Starkregen simulieren",
+    "label": "Starkregen simulieren",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "weather-pouring",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "rain",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 950,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "6dd75f5efb11b9af",
+    "type": "ui-button",
+    "name": "Startstationen leer simulieren",
+    "label": "Startstationen leer simulieren",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "bicycle",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "empty",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 990,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "5225e8208190205d",
+    "type": "ui-button",
+    "name": "Demo beenden (echte Daten neu laden)",
+    "label": "Demo beenden (echte Daten neu laden)",
+    "tooltip": "",
+    "emulateClick": false,
+    "color": "",
+    "bgcolor": "",
+    "icon": "refresh",
+    "iconPosition": "left",
+    "payload": "",
+    "payloadType": "str",
+    "topic": "reset",
+    "topicType": "str",
+    "buttonColor": "",
+    "textColor": "",
+    "iconColor": "",
+    "enableClick": true,
+    "enablePointerdown": false,
+    "pointerdownPayload": "",
+    "pointerdownPayloadType": "str",
+    "enablePointerup": false,
+    "pointerupPayload": "",
+    "pointerupPayloadType": "str",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "group": "6d5459b008feb016",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "className": "",
+    "x": 380,
+    "y": 1030,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "658125ec4008ff82",
+    "type": "inject",
+    "name": "Demo-Routen anlegen",
+    "props": [
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 1,
+    "topic": "demoroutes",
+    "wires": [
+      [
+        "e9a5bb38b5fe76e2"
+      ]
+    ],
+    "x": 380,
+    "y": 1070,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "48c791825beaedd7",
+    "type": "mqtt out",
+    "name": "g6-app",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "371a175cdaa0c57c",
+    "wires": [],
+    "x": 840,
+    "y": 960,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "a9fe39212f79725e",
+    "type": "mqtt in",
+    "name": "Profile (für Demo)",
+    "topic": "upm-dsiot-g6/move/profiles/+/+",
+    "qos": "1",
+    "datatype": "auto-detect",
+    "broker": "371a175cdaa0c57c",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "wires": [
+      [
+        "e9aecbc526794005"
+      ]
+    ],
+    "x": 140,
+    "y": 1120,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "e9aecbc526794005",
+    "type": "function",
+    "name": "Profile merken",
+    "func": "// Merkt sich die Profile, damit der Demo-Schalter die Startstationen kennt\nconst cfg = global.get('cfg');\nlet profiles = flow.get('demoProfiles');\nif (!profiles || profiles.__prefix !== cfg.prefix) profiles = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nif (typeof msg.payload === 'object' && msg.payload) profiles[key] = msg.payload;\nelse delete profiles[key];\nflow.set('demoProfiles', profiles);\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "wires": [
+      []
+    ],
+    "x": 380,
+    "y": 1120,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "cb13d38f8a2e9b8e",
+    "type": "debug",
+    "name": "Fehler",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "wires": [],
+    "x": 340,
+    "y": 1180,
+    "z": "cf931b46039477f7"
+  },
+  {
+    "id": "b9c83de646ca62e0",
+    "type": "catch",
+    "z": "cf931b46039477f7",
+    "name": "Fehler im Tab",
+    "scope": null,
+    "uncaught": false,
+    "x": 140,
+    "y": 1180,
+    "wires": [
+      [
+        "cb13d38f8a2e9b8e"
+      ]
+    ]
+  },
+  {
+    "id": "85facd4bcc49a099",
+    "type": "ui-base",
+    "name": "MadridMove",
+    "path": "/dashboard",
+    "appIcon": "",
+    "includeClientData": true,
+    "acceptsClientConfig": [
+      "ui-notification",
+      "ui-control"
+    ],
+    "showPathInSidebar": false,
+    "headerContent": "page",
+    "navigationStyle": "default",
+    "titleBarStyle": "default",
+    "showReconnectNotification": true,
+    "notificationDisplayTime": 1,
+    "showDisconnectNotification": true,
+    "allowInstall": false
+  },
+  {
+    "id": "7fb82c2635e3b5bd",
+    "type": "ui-theme",
+    "name": "MadridMove",
+    "colors": {
+      "surface": "#1f6f50",
+      "primary": "#1f6f50",
+      "bgPage": "#f6f7f8",
+      "groupBg": "#ffffff",
+      "groupOutline": "#dde1e4"
+    },
+    "sizes": {
+      "density": "default",
+      "pagePadding": "12px",
+      "groupGap": "12px",
+      "groupBorderRadius": "6px",
+      "widgetGap": "12px"
+    }
+  },
+  {
+    "id": "6d17725ddcd9ce96",
+    "type": "ui-page",
+    "name": "Empfehlungen",
+    "ui": "85facd4bcc49a099",
+    "path": "/empfehlungen",
+    "icon": "bike",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 1,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "494ef9dd12244e66",
+    "type": "ui-page",
+    "name": "Routen verwalten",
+    "ui": "85facd4bcc49a099",
+    "path": "/routen",
+    "icon": "map-marker-path",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 2,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "a27978ccd7d7ec45",
+    "type": "ui-page",
+    "name": "System & Demo",
+    "ui": "85facd4bcc49a099",
+    "path": "/system",
+    "icon": "cog",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 3,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "b3714cda0f816020",
+    "type": "ui-group",
+    "name": "Meine Route",
+    "page": "6d17725ddcd9ce96",
+    "width": "12",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "ecc9c7ceed7e0af6",
+    "type": "ui-group",
+    "name": "Alle Routen im Überblick",
+    "page": "6d17725ddcd9ce96",
+    "width": "12",
+    "height": "1",
+    "order": 2,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "b84763072e254742",
+    "type": "ui-group",
+    "name": "Neue Route",
+    "page": "494ef9dd12244e66",
+    "width": "6",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "660b0051cef2c830",
+    "type": "ui-group",
+    "name": "Route löschen",
+    "page": "494ef9dd12244e66",
+    "width": "6",
+    "height": "1",
+    "order": 2,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "92cb90a6fb1216b1",
+    "type": "ui-group",
+    "name": "Datenquellen",
+    "page": "a27978ccd7d7ec45",
+    "width": "6",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "a8c68267a6a734e3",
+    "type": "ui-group",
+    "name": "Wetter Madrid",
+    "page": "a27978ccd7d7ec45",
+    "width": "6",
+    "height": "1",
+    "order": 2,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  },
+  {
+    "id": "6d5459b008feb016",
+    "type": "ui-group",
+    "name": "Demo-Schalter",
+    "page": "a27978ccd7d7ec45",
+    "width": "6",
+    "height": "1",
+    "order": 3,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false",
+    "groupType": "default"
+  }
+]
