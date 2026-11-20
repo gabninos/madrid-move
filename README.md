@@ -65,7 +65,7 @@ flowchart LR
 |---|---|---|---|---|
 | `static/stations` | Stationsliste (id, name, lat, lon, capacity) | 1 | ja | Collector |
 | `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, nur bei Änderung, spätestens alle 10 min | 0 | ja | Collector / Simulator |
-| `live/weather` | aktuelles Wetter + Vorhersage für 4 h in 15-min-Schritten | 0 | ja | Collector / Simulator |
+| `live/weather` | aktuelles Wetter + Vorhersage für 24 h in 15-min-Schritten | 0 | ja | Collector / Simulator |
 | `routes/<nutzer>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, leer = löschen | 1 | ja | Client / Dashboard |
 | `users/<nutzer>/settings` | `{rain: kein/leicht/egal, windMax, tempMin, tempMax}` | 1 | ja | Client / Dashboard |
 | `profiles/<nutzer>/<route>` | Fahrzeit, Höhenmeter, Fußweg, ÖPNV-Schätzung | 1 | ja | Profil-Dienst |

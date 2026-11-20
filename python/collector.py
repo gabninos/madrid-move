@@ -9,7 +9,7 @@ Veröffentlicht (alle retained):
     <prefix>/static/stations          Stationsliste (QoS 1), stündlich
     <prefix>/live/bicimad/<id>        {bikes, docks, renting, returning, ts} (QoS 0),
                                       nur bei Änderung, spätestens alle 10 min ("Report by Exception")
-    <prefix>/live/weather             aktuelles Wetter + Vorhersage in 15-min-Schritten (QoS 0), alle 10 min
+    <prefix>/live/weather             aktuelles Wetter + Vorhersage für 24 h in 15-min-Schritten (QoS 0), alle 10 min
 
 Hört auf:
     <prefix>/cmd/bicimad/refresh, <prefix>/cmd/weather/refresh   sofort alles neu senden
@@ -178,7 +178,7 @@ def weather_loop(src):
     url = (f'{METEO_URL}?latitude={lat}&longitude={lon}'
            '&current=temperature_2m,precipitation,wind_speed_10m,weather_code'
            '&minutely_15=temperature_2m,precipitation,wind_speed_10m'
-           '&forecast_minutely_15=16&timeformat=unixtime&timezone=UTC')
+           '&forecast_minutely_15=96&timeformat=unixtime&timezone=UTC')
     while not stop.is_set():
         src.refresh.clear()
         try:
