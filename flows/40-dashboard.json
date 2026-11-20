@@ -82,74 +82,6 @@
     "z": "cf931b46039477f7"
   },
   {
-    "id": "5ab4595dc07f4192",
-    "type": "mqtt in",
-    "name": "Warnungen",
-    "topic": "upm-dsiot-g6/move/alerts/#",
-    "qos": "1",
-    "datatype": "auto-detect",
-    "broker": "371a175cdaa0c57c",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "wires": [
-      [
-        "79c72efc7dc35454"
-      ]
-    ],
-    "x": 140,
-    "y": 180,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "79c72efc7dc35454",
-    "type": "function",
-    "name": "Popup-Text",
-    "func": "// .../alerts/<nutzer> -> Popup im Dashboard\nconst user = msg.topic.split('/').pop();\nreturn { payload: user + ': ' + msg.payload };\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "wires": [
-      [
-        "8743f9032f6b5fd4"
-      ]
-    ],
-    "x": 330,
-    "y": 180,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "8743f9032f6b5fd4",
-    "type": "ui-notification",
-    "ui": "85facd4bcc49a099",
-    "position": "top right",
-    "colorDefault": true,
-    "color": "",
-    "displayTime": "6",
-    "showCountdown": true,
-    "outputs": 1,
-    "allowDismiss": true,
-    "dismissText": "Schließen",
-    "allowConfirm": false,
-    "confirmText": "OK",
-    "showInput": false,
-    "inputType": "text",
-    "inputLabel": "",
-    "raw": false,
-    "className": "",
-    "name": "Warnung",
-    "wires": [
-      []
-    ],
-    "x": 520,
-    "y": 180,
-    "z": "cf931b46039477f7"
-  },
-  {
     "id": "969ebbd97eb65c0e",
     "type": "comment",
     "z": "cf931b46039477f7",
@@ -594,7 +526,7 @@
     "id": "e9a5bb38b5fe76e2",
     "type": "function",
     "name": "Demo",
-    "func": "// Demo (Seite \"System & Demo\"):\n// - Demo-Routen: zwei Routen für den Nutzer \"demo\", Abfahrt in 14 min (also sofort \"aktiv\").\n//   Die Stationen werden über die Lage gesucht, damit es mit echten und simulierten Daten klappt.\n// - Demo-Ablauf / Beenden: Kommando an den Simulator über .../sim/cmd (QoS 1, nicht retained).\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nif (msg.topic === 'sim:demo' || msg.topic === 'sim:stop') {\n    return [[{ topic: P + '/sim/cmd', payload: { scenario: msg.topic.slice(4), by: 'dashboard' }, qos: 1, retain: false }]];\n}\nif (msg.topic !== 'demoroutes') return null;\nconst stations = flow.get('stations') || [];\nif (!stations.length) { node.warn('Noch keine Stationsliste – läuft der Collector?'); return null; }\nconst dist = (a, b) => Math.hypot((a.lon - b.lon) * 85000, (a.lat - b.lat) * 111000);\nconst near = (lat, lon) => stations.slice().sort((a, b) => dist(a, { lat, lon }) - dist(b, { lat, lon }))[0];\nconst parts = {};\nnew Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false })\n    .formatToParts(new Date(Date.now() + 14 * 60000)).forEach(p => { parts[p.type] = p.value; });\nconst time = String(Number(parts.hour) % 24).padStart(2, '0') + ':' + parts.minute;\nconst mk = (id, name, a, b) => ({\n    topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n    payload: { name: name, from: { id: a.id, label: a.name }, to: { id: b.id, label: b.name },\n        departure: { time: time, days: [1, 2, 3, 4, 5, 6, 7] }, createdAt: new Date().toISOString() }\n});\nreturn [[\n    mk('zur-uni', 'Zur Uni', near(40.4169, -3.7035), near(40.4437, -3.7276)),       // Sol -> Ciudad Universitaria\n    mk('zum-bahnhof', 'Zum Bahnhof', near(40.4199, -3.6887), near(40.4066, -3.6892)) // Retiro -> Atocha\n]];\n",
+    "func": "// Demo (Seite \"System & Demo\"):\n// - Demo-Route: eine Route \"Zur Uni\" (Sol -> Ciudad Universitaria) für den Nutzer \"demo\",\n//   Abfahrt in 14 min (also sofort \"aktiv\"). Die Einstellungen von \"demo\" werden auf die\n//   Standardwerte zurückgesetzt, damit jede Probe gleich startet.\n//   Die Stationen werden über die Lage gesucht, damit es mit echten und simulierten Daten klappt.\n// - Demo-Ablauf / Beenden: Kommando an den Simulator über .../sim/cmd (QoS 1, nicht retained).\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nif (msg.topic === 'sim:demo' || msg.topic === 'sim:stop') {\n    return [[{ topic: P + '/sim/cmd', payload: { scenario: msg.topic.slice(4), by: 'dashboard' }, qos: 1, retain: false }]];\n}\nif (msg.topic !== 'demoroutes') return null;\nconst stations = flow.get('stations') || [];\nif (!stations.length) { node.warn('Noch keine Stationsliste – läuft der Collector?'); return null; }\nconst dist = (a, b) => Math.hypot((a.lon - b.lon) * 85000, (a.lat - b.lat) * 111000);\nconst near = (lat, lon) => stations.slice().sort((a, b) => dist(a, { lat, lon }) - dist(b, { lat, lon }))[0];\nconst parts = {};\nnew Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false })\n    .formatToParts(new Date(Date.now() + 14 * 60000)).forEach(p => { parts[p.type] = p.value; });\nconst time = String(Number(parts.hour) % 24).padStart(2, '0') + ':' + parts.minute;\nconst mk = (id, name, a, b) => ({\n    topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n    payload: { name: name, from: { id: a.id, label: a.name }, to: { id: b.id, label: b.name },\n        departure: { time: time, days: [1, 2, 3, 4, 5, 6, 7] }, createdAt: new Date().toISOString() }\n});\nreturn [[\n    { topic: P + '/users/demo/settings', payload: cfg.reco.defaultSettings, qos: 1, retain: true },\n    { topic: P + '/routes/demo/zum-bahnhof', payload: '', qos: 1, retain: true },          // alte Demo-Route entfernen\n    mk('zur-uni', 'Zur Uni', near(40.4169, -3.7035), near(40.4437, -3.7276))              // Sol -> Ciudad Universitaria\n]];\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -613,8 +545,8 @@
   {
     "id": "d31f3a03d5381bac",
     "type": "ui-button",
-    "name": "Demo-Routen anlegen (Abfahrt in 14 min)",
-    "label": "Demo-Routen anlegen (Abfahrt in 14 min)",
+    "name": "Demo-Route anlegen (Abfahrt in 14 min)",
+    "label": "Demo-Route anlegen (Abfahrt in 14 min)",
     "tooltip": "",
     "emulateClick": false,
     "color": "",

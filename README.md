@@ -136,20 +136,23 @@ python3 client.py empfangen gabriel                     # Meldungen (persistente
 python3 client.py route-loeschen gabriel zur-uni
 ```
 
-## Demo (ca. 3 min, Seite *System & Demo*)
+## Demo (ca. 4 min, Seite *System & Demo*)
 
-1. **Demo-Routen anlegen**: zwei Routen für den Nutzer `demo`, Abfahrt in 14 min. Client mit `python3 client.py empfangen demo` zeigt sofort „gespeichert … ✓ Rad passt“.
+Bildschirm: links das Dashboard (*Meine Routen*), rechts ein Terminal mit `python3 client.py empfangen demo`. Im Dashboard gibt es keine Popups: Das Dashboard zeigt den Zustand, die Meldungen gehen an den Client.
+
+1. **Demo-Route anlegen**: eine Route „Zur Uni“ (Sol → Ciudad Universitaria) für den Nutzer `demo`, Abfahrt in 14 min. Die Einstellungen von `demo` werden auf die Standardwerte zurückgesetzt. Der Client zeigt „gespeichert … ✓ Rad passt“.
 2. **Demo-Ablauf starten**:
 
 | Zeit | Simulation | Ergebnis |
 |---|---|---|
-| 0 s | alles gut | Karten „✓ Rad passt“ |
-| 20 s | Startstationen fast leer, Nachbarn haben Räder | nur Hinweis „Ausweichstation … (70 m)“, **keine** Meldung |
-| 60 s | Regen in der Vorhersage | **Warnung** mit Alternativen auf dem Client |
+| 0 s | alles gut | Karte „✓ Rad passt“ |
+| 20 s | Startstation fast leer, Nachbarn haben Räder | nur Hinweis „Ausweichstation … (70 m)“, **keine** Meldung |
+| 60 s | Regen in der Vorhersage | **Warnung** mit Alternativen im Client |
 | 120 s | Regen vorbei, Räder aufgefüllt | **Entwarnung** |
 
-3. **Simulation beenden**: der Collector sendet sofort wieder echte Werte.
-4. Für Last Will und Persistent Session siehe Tests 4–6.
+3. **Personalisierung live** (während der Warnung): `python3 client.py einstellungen demo --regen egal` → sofort **Entwarnung**.
+4. **Last Will**: Collector hart beenden (`kill -9 $(pgrep -f collector.py)`) → auf *System & Demo* „offline (Absturz)“. Die Demo läuft weiter, weil der Simulator die Daten liefert.
+5. **Simulation beenden**: Nach einem Neustart des Collectors laufen wieder echte Werte.
 
 ## Tests (für den Bericht)
 
