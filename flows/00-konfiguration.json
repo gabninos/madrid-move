@@ -48,7 +48,7 @@
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
-    "initialize": "// ============================================================\n//  MadridMove – zentrale Konfiguration\n//  Alle externen APIs und alle Schwellwerte stehen NUR hier.\n//  Jeder Wert kann per Umgebungsvariable überschrieben werden,\n//  z. B. ORS_API_KEY=abc node-red   bzw.   docker run -e ORS_API_KEY=abc ...\n// ============================================================\nconst cfg = {\n    // Topic-Präfix: wird von configure.py gesetzt, nicht von Hand ändern\n    prefix: 'upm-dsiot-g6/move',\n\n    apis: {\n        // BiciMAD (GBFS-Einstiegsdatei; die Feed-URLs werden daraus gelesen)\n        gbfs: env.get('GBFS_URL') || 'https://madrid.publicbikesystem.net/customer/gbfs/v2/gbfs.json',\n        // Open-Meteo (Wetter, ohne Schlüssel)\n        meteo: env.get('METEO_URL') || 'https://api.open-meteo.com/v1/forecast',\n        // openrouteservice (Routing mit Höhe und Wegart, kostenloser Schlüssel)\n        ors: env.get('ORS_URL') || 'https://api.openrouteservice.org',\n        orsKey: env.get('ORS_API_KEY') || '',\n        // Geocoding (Adresse -> Koordinaten): Nominatim / OpenStreetMap, ohne Schlüssel.\n        // Nutzungsregeln: max. 1 Anfrage pro Sekunde, Anwendung im User-Agent nennen,\n        // KEINE Suche bei jedem Tastendruck (deshalb Suche nur auf Knopfdruck).\n        geocode: env.get('GEOCODE_URL') || 'https://nominatim.openstreetmap.org/search',\n        geocodeUserAgent: 'MadridMove/1.0 (UPM DSIoT student project)'\n    },\n\n    // Suchgebiet für Adressen: Stadt Madrid (links, oben, rechts, unten)\n    cityViewbox: '-3.89,40.57,-3.52,40.31',\n\n    // Wetterpunkt: Puerta del Sol\n    weatherPoint: { lat: 40.4168, lon: -3.7038 },\n\n    // Parameter der Empfehlungslogik (Minuten, km/h, mm, °C)\n    reco: {\n        bikeMinBikes: 1,        // weniger Räder am Start -> BiciMAD nicht möglich\n        bikeOkBikes: 3,         // weniger als das (aber >= bikeMinBikes) -> \"knapp\"\n        knappPenalty: 3,        // Aufschlag bei \"knapp\": evtl. ist das Rad weg, bis man da ist\n        bikeMinDocks: 1,        // weniger freie Plätze am Ziel -> nur HINWEIS (Rad kann mit\n                                // Schloss neben der Station abgestellt werden), kein Ausschluss\n        dockMin: 2,             // Ausleihen + Abstellen\n        minPerHmUp: 0.05,       // Aufschlag pro Höhenmeter bergauf (3 s; BiciMAD-Räder sind E-Bikes)\n        cyclewayBonusMax: 3,    // Bonus bei 100 % Radweg\n        rainLight: 0.1,         // mm Niederschlag (letzte 15 min) = leichter Regen\n        rainHeavy: 1.0,         // mm = starker Regen\n        rainPenaltyBike: 8,\n        rainPenaltyWalk: 5,\n        windStrong: 30,         // km/h\n        windPenaltyBike: 3,\n        coldBelow: 3,           // °C\n        hotAbove: 35,           // °C\n        tempPenalty: 3,\n        bikeSpeedKmh: 14,       // nur Schätzmodus (ohne ORS)\n        walkSpeedKmh: 4.8,      // nur Schätzmodus\n        detourFactor: 1.3,      // Luftlinie -> Straßenweg (Schätzmodus, Fußwege zur Station)\n        maxWalkToStationM: 1000,// weiter als das bis zur nächsten Station -> BiciMAD nicht sinnvoll\n        transitSpeedKmh: 18,    // ÖPNV-Schätzung: mittlere Reisegeschwindigkeit\n        transitAccessMin: 8,    // Fußwege zur und von der Haltestelle\n        transitWaitMin: 4,      // mittlere Wartezeit\n        staleMin: 15,           // BiciMAD-Daten älter als das = veraltet\n        weatherStaleMin: 30,    // Wetterdaten älter als das = veraltet\n        maxRoutesPerUser: 3,\n\n        // Zeitfenster und Meldungen\n        windowMin: 30,          // so viele Minuten vor der Abfahrt ist eine Route \"aktiv\"\n        preInfoMin: 15,         // Vorab-Info so viele Minuten vor der Abfahrt\n        switchMinGain: 2        // Empfehlung wechselt nur bei mind. so viel Minuten Vorteil\n                                // (außer die bisherige Option ist gar nicht mehr möglich)\n    },\n\n    // Feste Orte für die Auswahl im Formular (werden retained auf .../static/places\n    // veröffentlicht). Koordinaten auf ca. 100 m genau, zum Eintragen eigener Orte\n    // z. B. in OpenStreetMap rechtsklicken -> \"Adresse anzeigen\".\n    places: [\n        // Hochschulen\n        { id: 'etsisi', cat: 'Uni', label: 'UPM ETSISI (Campus Sur)', lat: 40.3897, lon: -3.6280 },\n        { id: 'ciudad-uni', cat: 'Uni', label: 'Ciudad Universitaria', lat: 40.4437, lon: -3.7276 },\n        { id: 'etsit', cat: 'Uni', label: 'UPM ETSIT (Ciudad Universitaria)', lat: 40.4525, lon: -3.7266 },\n        { id: 'uc3m-toledo', cat: 'Uni', label: 'UC3M Puerta de Toledo', lat: 40.4072, lon: -3.7110 },\n        { id: 'ie', cat: 'Uni', label: 'IE University (María de Molina)', lat: 40.4371, lon: -3.6866 },\n        // Bahnhöfe und Umsteigepunkte\n        { id: 'atocha', cat: 'Bahnhof', label: 'Estación de Atocha', lat: 40.4066, lon: -3.6892 },\n        { id: 'chamartin', cat: 'Bahnhof', label: 'Estación de Chamartín', lat: 40.4722, lon: -3.6826 },\n        { id: 'nuevos-ministerios', cat: 'Bahnhof', label: 'Nuevos Ministerios', lat: 40.4463, lon: -3.6918 },\n        { id: 'moncloa', cat: 'Bahnhof', label: 'Moncloa (Intercambiador)', lat: 40.4352, lon: -3.7190 },\n        { id: 'principe-pio', cat: 'Bahnhof', label: 'Príncipe Pío', lat: 40.4210, lon: -3.7208 },\n        { id: 'plaza-castilla', cat: 'Bahnhof', label: 'Plaza de Castilla', lat: 40.4669, lon: -3.6889 },\n        { id: 'avenida-america', cat: 'Bahnhof', label: 'Avenida de América', lat: 40.4381, lon: -3.6770 },\n        { id: 'mendez-alvaro', cat: 'Bahnhof', label: 'Méndez Álvaro (Estación Sur)', lat: 40.3953, lon: -3.6787 },\n        // Zentrum und bekannte Orte\n        { id: 'sol', cat: 'Zentrum', label: 'Puerta del Sol', lat: 40.4169, lon: -3.7035 },\n        { id: 'plaza-mayor', cat: 'Zentrum', label: 'Plaza Mayor', lat: 40.4155, lon: -3.7074 },\n        { id: 'callao', cat: 'Zentrum', label: 'Callao (Gran Vía)', lat: 40.4200, lon: -3.7058 },\n        { id: 'plaza-espana', cat: 'Zentrum', label: 'Plaza de España', lat: 40.4234, lon: -3.7122 },\n        { id: 'palacio-real', cat: 'Zentrum', label: 'Palacio Real', lat: 40.4180, lon: -3.7143 },\n        { id: 'cibeles', cat: 'Zentrum', label: 'Plaza de Cibeles', lat: 40.4193, lon: -3.6931 },\n        { id: 'colon', cat: 'Zentrum', label: 'Plaza de Colón', lat: 40.4253, lon: -3.6903 },\n        { id: 'prado', cat: 'Zentrum', label: 'Museo del Prado', lat: 40.4138, lon: -3.6921 },\n        { id: 'retiro', cat: 'Zentrum', label: 'Retiro (Puerta de Alcalá)', lat: 40.4199, lon: -3.6887 },\n        { id: 'malasana', cat: 'Zentrum', label: 'Malasaña (Plaza del Dos de Mayo)', lat: 40.4268, lon: -3.7038 },\n        { id: 'lavapies', cat: 'Zentrum', label: 'Lavapiés', lat: 40.4089, lon: -3.7008 },\n        { id: 'debod', cat: 'Zentrum', label: 'Templo de Debod', lat: 40.4240, lon: -3.7177 },\n        { id: 'matadero', cat: 'Zentrum', label: 'Matadero Madrid', lat: 40.3920, lon: -3.6975 },\n        { id: 'bernabeu', cat: 'Zentrum', label: 'Estadio Santiago Bernabéu', lat: 40.4531, lon: -3.6883 }\n    ]\n};\nglobal.set('cfg', cfg);\nnode.status({\n    fill: cfg.apis.orsKey ? 'green' : 'yellow', shape: 'dot',\n    text: cfg.apis.orsKey ? 'ORS-Schlüssel gesetzt' : 'kein ORS-Schlüssel: Schätzmodus'\n});\n",
+    "initialize": "// ============================================================\n//  MadridMove – zentrale Konfiguration der Node-RED-Dienste\n//  (Collector und Client sind Python-Programme, Einstellungen in python/config.py)\n//  Werte lassen sich per Umgebungsvariable überschreiben, z. B. ORS_API_KEY=abc node-red\n// ============================================================\nconst cfg = {\n    // Topic-Präfix: wird von configure.py gesetzt, nicht von Hand ändern\n    prefix: 'upm-dsiot-g6/move',\n\n    apis: {\n        // openrouteservice (Fahrzeit, Höhenmeter; kostenloser Schlüssel, optional)\n        ors: env.get('ORS_URL') || 'https://api.openrouteservice.org',\n        orsKey: env.get('ORS_API_KEY') || ''\n    },\n\n    reco: {\n        // Persönliche Grenzen, solange ein Nutzer nichts eingestellt hat (\"vorsichtig\")\n        defaultSettings: { rain: 'kein', windMax: 25, tempMin: 8, tempMax: 30 },\n        rainLight: 0.1,          // mm pro 15 min = leichter Regen (Grenze bei \"kein Regen\")\n        rainHeavy: 1.0,          // mm pro 15 min = starker Regen (Grenze bei \"leichter Regen ok\")\n\n        okBikes: 3,              // ab so vielen Rädern gilt eine Station als sicher\n        nearbyStationM: 500,     // Umkreis für Ausweichstationen\n        altFasterMin: 5,         // Warnung, wenn zu Fuß/ÖPNV mind. so viel schneller ist\n        dockMin: 2,              // Ausleihen + Abstellen\n        minPerHmUp: 0.05,        // Aufschlag pro Höhenmeter bergauf (3 s; BiciMAD = E-Bikes)\n\n        windowMin: 30,           // Meldungen nur so viele Minuten vor der Abfahrt\n        preInfoMin: 15,          // Vorab-Info so viele Minuten vor der Abfahrt\n        staleMin: 15,            // BiciMAD-Daten älter als das = veraltet\n        weatherStaleMin: 30,     // Wetterdaten älter als das = veraltet\n        maxRoutesPerUser: 3,\n\n        // Streckenprofil ohne ORS (Schätzmodus) und ÖPNV-Schätzung (kein Fahrplan)\n        bikeSpeedKmh: 14,\n        walkSpeedKmh: 4.8,\n        detourFactor: 1.3,       // Luftlinie -> Straßenweg\n        transitSpeedKmh: 18,\n        transitAccessMin: 8,     // Wege zur und von der Haltestelle\n        transitWaitMin: 4        // mittlere Wartezeit\n    }\n};\nglobal.set('cfg', cfg);\nnode.status({\n    fill: cfg.apis.orsKey ? 'green' : 'yellow', shape: 'dot',\n    text: cfg.apis.orsKey ? 'ORS-Schlüssel gesetzt' : 'kein ORS-Schlüssel: Schätzmodus'\n});\n",
     "finalize": "",
     "libs": [],
     "wires": [
@@ -76,68 +76,6 @@
     "x": 520,
     "y": 100,
     "z": "834af59d0d1345e8"
-  },
-  {
-    "id": "45bdfcb6d12255f2",
-    "type": "mqtt-broker",
-    "name": "g6-col-bicimad",
-    "broker": "test.mosquitto.org",
-    "port": 1883,
-    "clientid": "g6-col-bicimad",
-    "autoConnect": true,
-    "usetls": false,
-    "protocolVersion": 4,
-    "keepalive": 30,
-    "cleansession": true,
-    "autoUnsubscribe": true,
-    "birthTopic": "upm-dsiot-g6/move/system/bicimad",
-    "birthQos": "1",
-    "birthRetain": "true",
-    "birthPayload": "online",
-    "birthMsg": {},
-    "closeTopic": "upm-dsiot-g6/move/system/bicimad",
-    "closeQos": "1",
-    "closeRetain": "true",
-    "closePayload": "offline (beendet)",
-    "closeMsg": {},
-    "willTopic": "upm-dsiot-g6/move/system/bicimad",
-    "willQos": "1",
-    "willRetain": "true",
-    "willPayload": "offline (Absturz)",
-    "willMsg": {},
-    "userProps": "",
-    "sessionExpiry": ""
-  },
-  {
-    "id": "eaac539f34213b39",
-    "type": "mqtt-broker",
-    "name": "g6-col-weather",
-    "broker": "test.mosquitto.org",
-    "port": 1883,
-    "clientid": "g6-col-weather",
-    "autoConnect": true,
-    "usetls": false,
-    "protocolVersion": 4,
-    "keepalive": 30,
-    "cleansession": true,
-    "autoUnsubscribe": true,
-    "birthTopic": "upm-dsiot-g6/move/system/weather",
-    "birthQos": "1",
-    "birthRetain": "true",
-    "birthPayload": "online",
-    "birthMsg": {},
-    "closeTopic": "upm-dsiot-g6/move/system/weather",
-    "closeQos": "1",
-    "closeRetain": "true",
-    "closePayload": "offline (beendet)",
-    "closeMsg": {},
-    "willTopic": "upm-dsiot-g6/move/system/weather",
-    "willQos": "1",
-    "willRetain": "true",
-    "willPayload": "offline (Absturz)",
-    "willMsg": {},
-    "userProps": "",
-    "sessionExpiry": ""
   },
   {
     "id": "371a175cdaa0c57c",
@@ -200,77 +138,5 @@
     "willMsg": {},
     "userProps": "",
     "sessionExpiry": ""
-  },
-  {
-    "id": "a7b3a986f00f2705",
-    "type": "comment",
-    "z": "834af59d0d1345e8",
-    "name": "Feste Orte → …/static/places (retained)",
-    "info": "",
-    "x": 160,
-    "y": 200,
-    "wires": []
-  },
-  {
-    "id": "753733891135dd02",
-    "type": "inject",
-    "z": "834af59d0d1345e8",
-    "name": "beim Start",
-    "props": [
-      {
-        "p": "topic",
-        "vt": "str"
-      }
-    ],
-    "repeat": "",
-    "crontab": "",
-    "once": true,
-    "onceDelay": 1.5,
-    "topic": "",
-    "x": 130,
-    "y": 240,
-    "wires": [
-      [
-        "af9fc1ca1aa7ec59"
-      ]
-    ]
-  },
-  {
-    "id": "af9fc1ca1aa7ec59",
-    "type": "function",
-    "z": "834af59d0d1345e8",
-    "name": "Orte veröffentlichen",
-    "func": "// Feste Orte aus der Konfiguration -> .../static/places (retained, QoS 1).\n// Wie die Stationsliste: statische Daten, die jeder neue Client sofort bekommt.\nconst cfg = global.get('cfg');\nconst places = (cfg.places || []).map(p => ({ id: p.id, cat: p.cat, label: p.label, lat: p.lat, lon: p.lon }));\nnode.status({ fill: 'green', shape: 'dot', text: places.length + ' Orte veröffentlicht' });\nreturn { topic: cfg.prefix + '/static/places', payload: places, qos: 1, retain: true };\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 330,
-    "y": 240,
-    "wires": [
-      [
-        "751788abd40372f4"
-      ]
-    ]
-  },
-  {
-    "id": "751788abd40372f4",
-    "type": "mqtt out",
-    "z": "834af59d0d1345e8",
-    "name": "g6-app",
-    "topic": "",
-    "qos": "",
-    "retain": "",
-    "respTopic": "",
-    "contentType": "",
-    "userProps": "",
-    "correl": "",
-    "expiry": "",
-    "broker": "371a175cdaa0c57c",
-    "x": 530,
-    "y": 240,
-    "wires": []
   }
 ]
