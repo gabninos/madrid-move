@@ -114,7 +114,7 @@ python3 configure.py 6              # Abgabe/Demo; zum Entwickeln: python3 confi
 
 # 2. Node-RED (Terminal 1)
 node-red                            # optional: ORS_API_KEY=... node-red
-#    http://localhost:1880 -> Import -> alle Dateien aus flows/ -> Deploy
+#    http://localhost:1880 -> Import -> flows/madridmove.json -> Deploy
 
 # 3. Collector (Terminal 2)
 cd python && python3 collector.py
@@ -179,10 +179,14 @@ Alles mitlesen: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v
 ## Ordnerstruktur
 
 ```
-flows/      00-konfiguration, 20-profil-dienst, 30-empfehlung, 40-dashboard, 50-simulation
+flows/      madridmove.json (alle 5 Tabs: Konfiguration, Profil-Dienst, Empfehlung, Dashboard, Simulation)
 python/     collector.py, client.py, config.py, requirements.txt
 configure.py
 ```
+
+## Änderungen an den Flows ins Repo übernehmen
+
+Alle Tabs liegen in **einer** Datei. Nach Änderungen in Node-RED: Menü → *Export* → *Alle Flows* → herunterladen und `flows/madridmove.json` damit überschreiben, dann committen. Weil alles in einer Datei steht, sollte immer nur eine Person gleichzeitig an den Flows arbeiten (vorher `git pull`, danach sofort committen und pushen), sonst gibt es Merge-Konflikte.
 
 ## Datenquellen und Lizenzen
 
