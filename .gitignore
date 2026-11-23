@@ -167,3 +167,8 @@ __pycache__/
 *.pyc
 .venv/
 python/stations_cache.json
+
+# MadridMove: geheime Zugangsdaten und Token-Cache (nie committen)
+python/secrets.env
+python/.emt_token.json
+python/gtfs/

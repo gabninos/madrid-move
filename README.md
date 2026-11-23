@@ -20,9 +20,11 @@ flowchart LR
     GBFS[BiciMAD GBFS]
     OM[Open-Meteo<br/>Vorhersage 15 min]
     ORS[openrouteservice<br/>optional]
+    EMT[EMT MobilityLabs<br/>Busankünfte, optional]
+    GTFS[EMT-Fahrplan<br/>GTFS]
   end
   subgraph PY["Python"]
-    COL[collector.py<br/>g6-col-bicimad<br/>g6-col-weather]
+    COL[collector.py<br/>g6-col-bicimad<br/>g6-col-weather<br/>g6-col-fahrplan<br/>g6-col-emt]
     CLI[client.py<br/>g6-client-&lt;nutzer&gt;]
   end
   subgraph NR["Node-RED"]
@@ -30,11 +32,14 @@ flowchart LR
     RE[Empfehlungsdienst]
     DB[Dashboard]
     SIM[Simulator<br/>g6-sim]
+    STA[Statistik-Dienst]
   end
   BR((MQTT-Broker<br/>test.mosquitto.org))
 
   GBFS --> COL
   OM --> COL
+  EMT --> COL
+  GTFS --> COL
   COL -- static, live, system --> BR
   CLI -- routes, settings --> BR
   BR -- alerts --> CLI
@@ -46,17 +51,22 @@ flowchart LR
   BR -- reco, alerts, system --> DB
   DB -- routes, settings, sim/cmd --> BR
   SIM -- live, sim/state --> BR
+  BR -- live, stations --> STA
+  STA -- stats --> BR
 ```
 
 **Python an den Rändern, Node-RED in der Mitte, MQTT verbindet alles.** Kein Dienst kennt einen anderen direkt. Der Simulator veröffentlicht für die Vorführung auf denselben Topics wie der Collector, und die übrigen Dienste merken keinen Unterschied.
 
 | Teil | Sprache | Aufgabe |
 |---|---|---|
-| `python/collector.py` | Python | **Producer**: Stationen, Räder (nur Änderungen), Wetter mit Vorhersage |
+| `python/collector.py` | Python | **Producer**: Stationen, Räder (nur Änderungen), Wetter mit Vorhersage, Busankünfte (EMT, optional) |
+| `python/emt.py` | Python | Anmeldung bei EMT MobilityLabs, Token-Cache und automatische Erneuerung |
+| `python/gtfs_plan.py` | Python | Fahrplan der EMT-Busse (GTFS): beste direkte Busverbindung je Route |
 | `python/client.py` | Python | **Producer + Consumer**: Route und Einstellungen speichern, Meldungen empfangen |
 | Profil-Dienst | Node-RED | Route → Fahrzeit, Fußweg, ÖPNV-Schätzung (mit ORS genauer) |
 | Empfehlungsdienst | Node-RED | Rad ok oder Warnung, Meldungen im Zeitfenster |
-| Dashboard | Node-RED | Übersicht, Formulare, Systemstatus, Demo |
+| Statistik-Dienst | Node-RED | Kennzahlen für die Diagramme: Pendlerwelle, Zentrum gegen Stadtrand, Wetter und Radnutzung |
+| Dashboard | Node-RED | Übersicht (Empfehlung + Diagramme), Formulare, Systemstatus, Demo |
 | Simulator | Node-RED | fester Demo-Ablauf für die Vorführung |
 
 ## Topics (Präfix `upm-dsiot-g6/move`)
@@ -66,6 +76,11 @@ flowchart LR
 | `static/stations` | Stationsliste (id, name, lat, lon, capacity) | 1 | ja | Collector |
 | `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, nur bei Änderung, spätestens alle 10 min | 0 | ja | Collector / Simulator |
 | `live/weather` | aktuelles Wetter + Vorhersage für 24 h in 15-min-Schritten | 0 | ja | Collector / Simulator |
+| `live/emt/<nutzer>/<route>` | `{stop:{id,name,distM}, arrivals:[{line,destination,min}], ts}` nächste Busse am Startpunkt, alle 90 s | 0 | ja | Collector (nur mit EMT-Zugang) |
+| `plan/<nutzer>/<route>` | beste direkte Busverbindung laut Fahrplan zur nächsten Abfahrt: Linie, Ein-/Ausstieg, Abfahrt oder Takt, Fahrzeit, Gesamtzeit; `status` ok / nodirect / noservice | 1 | ja | Collector |
+| `stats/now` | freie Räder, leere/volle Stationen, Füllgrad Zentrum/Stadtrand | 0 | ja | Statistik-Dienst |
+| `stats/spatial` | je Station `[km bis Sol, Füllgrad %]` | 0 | ja | Statistik-Dienst |
+| `stats/history` | Verlauf: Pendlerwelle (5 min, 24 h), Radbewegungen + Wetter (10 min, 3 Tage) | 1 | ja | Statistik-Dienst |
 | `routes/<nutzer>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, leer = löschen | 1 | ja | Client / Dashboard |
 | `users/<nutzer>/settings` | `{rain: kein/leicht/egal, windMax, tempMin, tempMax}` | 1 | ja | Client / Dashboard |
 | `profiles/<nutzer>/<route>` | Fahrzeit, Höhenmeter, Fußweg, ÖPNV-Schätzung | 1 | ja | Profil-Dienst |
@@ -75,7 +90,7 @@ flowchart LR
 | `sim/cmd`, `sim/state` | Demo starten/beenden, Zustand | 1 | nein / ja | Dashboard / Simulator |
 | `cmd/bicimad/refresh`, `cmd/weather/refresh` | Collector soll sofort alles neu senden | 1 | nein | Simulator |
 
-**Last-Will-Topics:** `system/bicimad` und `system/weather` (Collector, je eigene Verbindung), `system/sim` (Simulator), `system/client-<nutzer>` (Client). Bricht eine Verbindung ohne DISCONNECT ab, veröffentlicht der Broker „offline (Absturz)“ (retained). Beim sauberen Beenden senden die Programme vorher „offline (beendet)“, beim Start „online“ (Birth).
+**Last-Will-Topics:** `system/bicimad`, `system/weather`, `system/fahrplan` und `system/emt` (Collector, je eigene Verbindung), `system/sim` (Simulator), `system/client-<nutzer>` (Client). Bricht eine Verbindung ohne DISCONNECT ab, veröffentlicht der Broker „offline (Absturz)“ (retained). Beim sauberen Beenden senden die Programme vorher „offline (beendet)“, beim Start „online“ (Birth).
 
 ## Zustellsemantik
 
@@ -94,7 +109,8 @@ Alle Werte stehen in Node-RED im Tab *⚙ Konfiguration* unter `reco`.
 |---|---|
 | Wetter | Vorhersage für die Fahrt (Abfahrt bis Ankunft). Warnung, wenn die persönliche Grenze überschritten wird: Regen (kein Regen: ab 0,1 mm/15 min, leichter Regen ok: ab 1,0 mm), Wind über `windMax`, Temperatur außerhalb `tempMin`–`tempMax`. |
 | Räder | Ab 3 Rädern ok. Weniger: Ausweichstation im Umkreis von 500 m mit ≥ 3 Rädern → nur Hinweis. Keine → Warnung. |
-| Alternativen | Zu Fuß oder ÖPNV (Schätzung) mindestens 5 min schneller → Warnung. In jeder Warnung stehen beide Alternativen. |
+| Alternativen | Zu Fuß oder ÖPNV mindestens 5 min schneller → Warnung. In jeder Warnung stehen beide Alternativen. |
+| ÖPNV | 1. **Fahrplan** (GTFS der EMT): beste direkte Buslinie von einer Haltestelle bis 600 m um den Start zu einer bis 600 m um das Ziel, zur geplanten Abfahrt. Zeit = Fußweg + Warten (bei Takt-Linien halber Takt) + Fahrzeit laut Plan + Fußweg. Fährt zu der Zeit kein direkter Bus (Wartezeit > 60 min), zählt ÖPNV nicht als Alternative. 2. **EMT live** (Abfahrt in ≤ 20 min): fährt die Fahrplan-Linie gerade an der Haltestelle, ersetzt die echte Wartezeit die geplante. 3. **Schätzung**, wenn es keine direkte Linie gibt (mit Umsteigen evtl. möglich): Wege + 4 min Warten + Strecke mit 18 km/h. |
 | Zielstation voll | kein Thema, das Rad kann daneben abgestellt werden |
 | Standardgrenzen | vorsichtig: kein Regen, Wind bis 25 km/h, 8–30 °C |
 | Meldungen | nur 30 min vor der Abfahrt: Warnung bei Wechsel auf „warn“, Vorab-Info 15 min vorher, Entwarnung nur nach einer Warnung |
@@ -104,26 +120,40 @@ Alle Werte stehen in Node-RED im Tab *⚙ Konfiguration* unter `reco`.
 
 ## Einrichten und Starten
 
-Voraussetzungen: Node.js mit Node-RED, das Paket `@flowfuse/node-red-dashboard` (Menü → Palette verwalten), Python 3.9+.
+Voraussetzungen: Node-RED (bei uns im Docker-Container) mit `@flowfuse/node-red-dashboard` (Menü → Palette verwalten), Python 3.9+. Unter Windows heißt Python `py`, unter macOS/Linux `python3`.
 
-```bash
-# 1. Einmalig
-cd madrid-move
-python3 -m pip install -r python/requirements.txt
-python3 configure.py 6              # Abgabe/Demo; zum Entwickeln: python3 configure.py 6 <kürzel>
+```powershell
+# 1. Einmalig (im Repo-Hauptordner)
+cd "C:\...\madrid-move"
+py -m pip install -r python\requirements.txt
+py configure.py 6 tobias            # Entwickeln: eigenes Präfix. Vor dem Commit: py configure.py 6
 
-# 2. Node-RED (Terminal 1)
-node-red                            # optional: ORS_API_KEY=... node-red
-#    http://localhost:1880 -> Import -> flows/madridmove.json -> Deploy
+# 2. Node-RED: http://localhost:1880 -> Menü -> Import -> flows/madridmove.json
+#    -> "Ersetzen" bei Konflikten -> Deploy
 
-# 3. Collector (Terminal 2)
-cd python && python3 collector.py
+# 3. Collector (Terminal 1, läuft dauerhaft)
+cd python
+py collector.py
 
-# 4. Client (Terminal 3)
-cd python && python3 client.py empfangen gabriel
+# 4. Client (Terminal 2)
+cd python
+py client.py empfangen tobias
 ```
 
 Dashboard: http://localhost:1880/dashboard. Blockiert das Netz Port 1883, den Handy-Hotspot nehmen.
+
+### Fahrplan (automatisch)
+
+Der Collector lädt beim Start den Busfahrplan der EMT (GTFS, ca. 236 Linien) nach `python/gtfs/transitemt.zip` und erneuert ihn wöchentlich; ein Konto ist nicht nötig. Klappt der Download nicht (Firewall, Port 8443), die Datei im Browser von https://servicios.emtmadrid.es:8443/gtfs/transitemt.zip laden und dort ablegen. Test ohne MQTT: `py gtfs_plan.py test 40.4169 -3.7035 40.4437 -3.7276 08:30` (Start, Ziel, Uhrzeit).
+
+### EMT-Busankünfte (optional, dauerhaft)
+
+1. `python/secrets.env.example` kopieren, Kopie `python/secrets.env` nennen.
+2. Dort `EMT_EMAIL=` und `EMT_PASSWORD=` (Konto von mobilitylabs.emtmadrid.es) eintragen. Alternativ `EMT_CLIENT_ID=` und `EMT_PASSKEY=`.
+3. Test: `cd python` und `py emt.py test` → „OK: Token vorhanden, noch 24.0 h gültig“.
+4. `py collector.py` neu starten → im Log „EMT: angemeldet …“, im Dashboard ist „EMT-Bus“ grün.
+
+`secrets.env` und der Token-Cache `.emt_token.json` stehen in `.gitignore` und landen nie im Repo. Das Passwort bleibt auf dem Rechner, der den Collector ausführt; über MQTT gehen nur Busankünfte. Der Token (ca. 24 h gültig) wird 30 min vor Ablauf und bei Ablehnung (Code 80) automatisch neu geholt. Ohne `secrets.env` läuft alles wie bisher mit der ÖPNV-Schätzung.
 
 ### Client
 
@@ -138,21 +168,34 @@ python3 client.py route-loeschen gabriel zur-uni
 
 ## Demo (ca. 4 min, Seite *System & Demo*)
 
-Bildschirm: links das Dashboard (*Meine Routen*), rechts ein Terminal mit `python3 client.py empfangen demo`. Im Dashboard gibt es keine Popups: Das Dashboard zeigt den Zustand, die Meldungen gehen an den Client.
+Bildschirm: links das Dashboard (*Übersicht*), rechts ein Terminal mit `py client.py empfangen demo`. Im Dashboard gibt es keine Popups: Das Dashboard zeigt den Zustand, die Meldungen gehen an den Client.
 
-1. **Demo-Route anlegen**: eine Route „Zur Uni“ (Sol → Ciudad Universitaria) für den Nutzer `demo`, Abfahrt in 14 min. Die Einstellungen von `demo` werden auf die Standardwerte zurückgesetzt. Der Client zeigt „gespeichert … ✓ Rad passt“.
-2. **Demo-Ablauf starten**:
+1. **Demo-Ablauf starten**: legt die Route „Zur Uni“ (Sol → Ciudad Universitaria) für den Nutzer `demo` an (Abfahrt in 14 min, Standardgrenzen) und startet den Ablauf. Das klappt beliebig oft hintereinander, weil die Abfahrtszeit jedes Mal neu gesetzt wird. (*Demo-Route anlegen* legt nur die Route an.)
 
 | Zeit | Simulation | Ergebnis |
 |---|---|---|
-| 0 s | alles gut | Karte „✓ Rad passt“ |
-| 20 s | Startstation fast leer, Nachbarn haben Räder | nur Hinweis „Ausweichstation … (70 m)“, **keine** Meldung |
+| 0 s | alles gut | Karte „✓ Rad passt“, Vorab-Info im Client |
+| 20 s | Startstation fast leer, Nachbarn haben Räder | nur Hinweis „Ausweichstation …“, **keine** Meldung |
 | 60 s | Regen in der Vorhersage | **Warnung** mit Alternativen im Client |
 | 120 s | Regen vorbei, Räder aufgefüllt | **Entwarnung** |
+| ca. 3 min | Ende | Simulation beendet sich selbst, der Collector sendet wieder echte Werte |
 
-3. **Personalisierung live** (während der Warnung): `python3 client.py einstellungen demo --regen egal` → sofort **Entwarnung**.
-4. **Last Will**: Collector hart beenden (`kill -9 $(pgrep -f collector.py)`) → auf *System & Demo* „offline (Absturz)“. Die Demo läuft weiter, weil der Simulator die Daten liefert.
-5. **Simulation beenden**: Nach einem Neustart des Collectors laufen wieder echte Werte.
+2. **Personalisierung live** (während der Warnung): `py client.py einstellungen demo --regen egal` → sofort **Entwarnung**.
+3. **Last Will**: Collector-Fenster hart schließen (oder `kill -9`) → nach ca. 45 s „offline (Absturz)“, auf der Übersicht erscheint ein Hinweis. Die Demo läuft weiter, weil der Simulator die Daten liefert.
+4. **Simulation beenden** bricht den Ablauf jederzeit ab.
+
+Simulierte Werte (`demo: true`) gehen nicht in die Statistik ein und gelten in der Empfehlung nur, solange der Simulator sendet.
+
+## Dashboard-Diagramme (Seite *Übersicht*)
+
+| Diagramm | Was es zeigt | Daten |
+|---|---|---|
+| Madrid jetzt | Wetter, freie Räder, leere/volle Stationen, Füllgrad, Radbewegungen, Status der Datenquellen (BiciMAD, Wetter, Fahrplan, EMT) | `stats/now`, `live/weather`, `system/+` |
+| Pendlerwelle | Füllgrad (Räder ÷ Stellplätze) im Zentrum (≤ 3 km um Sol) und am Stadtrand über 24 h | ein Punkt alle 5 min |
+| Zentrum gegen Stadtrand | jede Station: Entfernung zur Puerta del Sol gegen Füllgrad | jede Minute |
+| Wetter und Radnutzung | Radbewegungen je 10 min (blau = Regen) und darunter Temperatur und Wind | alle 10 min, 3 Tage |
+
+Der Verlauf liegt retained auf `stats/history` und wird nach einem Neustart von Node-RED übernommen. Die Diagramme füllen sich also nur, solange Collector und Node-RED laufen: für die Präsentation am besten ein paar Stunden vorher starten.
 
 ## Tests (für den Bericht)
 
@@ -171,7 +214,7 @@ Alles mitlesen: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v
 
 ## Grenzen und Future Work
 
-- ÖPNV-Zeiten sind eine Schätzung (Wege + Warten + Strecke mit 18 km/h). Ausbau: echte Verbindungen über einen ÖPNV-Routingdienst (z. B. Transitous) oder EMT-Wartezeiten.
+- ÖPNV: nur direkte Busverbindungen laut Fahrplan, keine Umstiege, keine Metro/Cercanías. Ohne direkte Linie bleibt es bei der Schätzung. Ausbau: Routing mit Umstiegen (z. B. Transitous) und die GTFS-Fahrpläne von Metro und Cercanías.
 - Öffentlicher Broker ohne Anmeldung und Verschlüsselung: Jeder kann mitlesen und Routen ändern. In echt: eigener Broker mit TLS und Zugriffsrechten pro Nutzer (ACLs).
 - Nutzer = Kurzname, keine Konten. Das Dashboard ist eine gemeinsame Übersicht; der persönliche Kanal ist der Client.
 - Wetter für einen Punkt (Sol), nicht entlang der Strecke.
@@ -179,8 +222,9 @@ Alles mitlesen: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v
 ## Ordnerstruktur
 
 ```
-flows/      madridmove.json (alle 5 Tabs: Konfiguration, Profil-Dienst, Empfehlung, Dashboard, Simulation)
-python/     collector.py, client.py, config.py, requirements.txt
+flows/      madridmove.json (alle 6 Tabs: Konfiguration, Profil-Dienst, Empfehlung, Dashboard, Simulation, Statistik)
+python/     collector.py, client.py, emt.py, gtfs_plan.py, config.py, requirements.txt, secrets.env.example
+            (secrets.env, .emt_token.json und gtfs/: nur lokal, git-ignoriert)
 configure.py
 ```
 
@@ -193,3 +237,5 @@ Alle Tabs liegen in **einer** Datei. Nach Änderungen in Node-RED: Menü → *Ex
 - BiciMAD GBFS (EMT Madrid / Ayuntamiento de Madrid, datos.gob.es)
 - Open-Meteo, CC BY 4.0
 - openrouteservice (HeiGIT), Kartendaten © OpenStreetMap-Mitwirkende (ODbL)
+- EMT Madrid MobilityLabs (Busankünfte, Konto erforderlich)
+- EMT GTFS (Busfahrplan), Portal de datos abiertos EMT / datos.madrid.es
