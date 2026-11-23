@@ -16,8 +16,6 @@ Veröffentlicht (alle retained):
     <prefix>/plan/<nutzer>/<route>     beste direkte Busverbindung laut Fahrplan zur nächsten Abfahrt (QoS 1)
 
 Hört auf:
-    <prefix>/cmd/bicimad/refresh, <prefix>/cmd/weather/refresh   sofort alles neu senden
-    <prefix>/sim/state                während einer Simulation keine Live-Werte senden
     <prefix>/profiles/+/+             (EMT, Fahrplan) Start- und Zielpunkte der Routen
     <prefix>/routes/+/+               (Fahrplan) Abfahrtszeiten der Routen
 
@@ -45,7 +43,6 @@ EMT_RADIUS_M = 400             # Haltestellen im Umkreis des Startpunkts
 EMT_MAX_STOPS = 3              # bis zu 3 Haltestellen je Route (nur wenn sie weitere Linien bringen)
 CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stations_cache.json')
 
-sim_active = threading.Event()   # gesetzt, solange eine Simulation läuft
 stop = threading.Event()
 
 
@@ -82,26 +79,13 @@ class Source:
             return
         log(self.name, 'verbunden mit', BROKER)
         client.publish(self.status_topic, 'online', qos=1, retain=True)          # Birth
-        client.subscribe([(f'{PREFIX}/cmd/{self.name}/refresh', 1), (f'{PREFIX}/sim/state', 1)] + self.extra_subs)
+        if self.extra_subs:
+            client.subscribe(self.extra_subs)
         self.refresh.set()      # nach (Wieder-)Verbindung alles neu senden (falls der Broker retained verloren hat)
 
     def _on_message(self, client, userdata, msg):
-        if self.on_extra and not msg.topic.endswith('/sim/state') and '/cmd/' not in msg.topic:
+        if self.on_extra:
             self.on_extra(msg)
-        elif msg.topic.endswith('/sim/state'):
-            try:
-                active = bool(json.loads(msg.payload or b'{}').get('active'))
-            except ValueError:
-                active = False
-            if active and not sim_active.is_set():
-                log('Simulation aktiv: Live-Werte pausiert')
-            if active:
-                sim_active.set()
-            else:
-                sim_active.clear()
-        else:
-            log(self.name, 'Kommando: neu senden')
-            self.refresh.set()
 
     def start(self):
         self.client.connect_async(BROKER, PORT, keepalive=KEEPALIVE)
@@ -143,7 +127,7 @@ def bicimad_loop(src):
         except Exception as e:      # Netzwerk, JSON, unerwartetes Format
             log('BiciMAD-Fehler:', e)
             if last_info == 0 and os.path.exists(CACHE_FILE):
-                # Kein Internet: letzte bekannte Stationsliste veröffentlichen (für Simulator/Demo)
+                # Kein Internet: letzte bekannte Stationsliste veröffentlichen (Demo ohne Internet)
                 with open(CACHE_FILE, encoding='utf-8') as f:
                     src.publish(f'{PREFIX}/static/stations', json.load(f), qos=1)
                 last_info = time.time() - STATIONS_EVERY_S + 300   # in 5 min erneut versuchen
@@ -163,9 +147,6 @@ def publish_stations(src, url):
 
 def publish_status(src, url, last_sent):
     raw = get_json(url)['data']['stations']
-    if sim_active.is_set():
-        src.publish(src.status_topic, 'online', qos=1)      # nur Heartbeat
-        return
     now = int(time.time() * 1000)
     sent = 0
     for s in raw:
@@ -206,12 +187,9 @@ def weather_loop(src):
             w = {'temp': c['temperature_2m'], 'precip': c['precipitation'], 'wind': c['wind_speed_10m'],
                  'code': c.get('weather_code'), 'ts': int(time.time() * 1000),
                  'forecast': forecast, 'source': 'open-meteo'}
-            if sim_active.is_set():
-                src.publish(src.status_topic, 'online', qos=1)
-            else:
-                src.publish(f'{PREFIX}/live/weather', w, qos=0)
-                src.publish(src.status_topic, 'online', qos=1)
-                log(f"Wetter: {w['temp']} °C, {w['precip']} mm, {w['wind']} km/h, {len(forecast)} Vorhersagewerte")
+            src.publish(f'{PREFIX}/live/weather', w, qos=0)
+            src.publish(src.status_topic, 'online', qos=1)
+            log(f"Wetter: {w['temp']} °C, {w['precip']} mm, {w['wind']} km/h, {len(forecast)} Vorhersagewerte")
         except Exception as e:
             log('Wetter-Fehler:', e)
         src.refresh.wait(WEATHER_EVERY_S)

@@ -109,37 +109,6 @@
     "sessionExpiry": ""
   },
   {
-    "id": "840ea2d3a1cf5304",
-    "type": "mqtt-broker",
-    "name": "g6-sim",
-    "broker": "test.mosquitto.org",
-    "port": 1883,
-    "clientid": "g6-sim",
-    "autoConnect": true,
-    "usetls": false,
-    "protocolVersion": 4,
-    "keepalive": 30,
-    "cleansession": true,
-    "autoUnsubscribe": true,
-    "birthTopic": "upm-dsiot-g6/move/system/sim",
-    "birthQos": "1",
-    "birthRetain": "true",
-    "birthPayload": "online",
-    "birthMsg": {},
-    "closeTopic": "upm-dsiot-g6/move/system/sim",
-    "closeQos": "1",
-    "closeRetain": "true",
-    "closePayload": "offline (beendet)",
-    "closeMsg": {},
-    "willTopic": "upm-dsiot-g6/move/system/sim",
-    "willQos": "1",
-    "willRetain": "true",
-    "willPayload": "offline (Absturz)",
-    "willMsg": {},
-    "userProps": "",
-    "sessionExpiry": ""
-  },
-  {
     "id": "d0758e3c8908c3f2",
     "type": "tab",
     "label": "Profil-Dienst",
@@ -483,7 +452,7 @@
     "id": "227226d5f179f0e4",
     "type": "function",
     "name": "Empfehlung berechnen",
-    "func": "// ============================================================\n//  Empfehlungsdienst: \"Kann ich meine BiciMAD-Fahrt wie geplant machen?\"\n//  Eingänge (alle per Wildcard abonniert, retained):\n//    .../profiles/+/+         Streckenprofil (Fahrzeit, Fußweg, ÖPNV-Schätzung)\n//    .../routes/+/+           Abfahrtszeit und Wochentage\n//    .../users/+/settings     persönliche Grenzen (Regen, Wind, Temperatur)\n//    .../static/stations      Stationsliste (für Ausweichstationen)\n//    .../live/bicimad/+       Räder/Plätze je Station\n//    .../live/weather         aktuelles Wetter + Vorhersage (15-min-Schritte)\n//    .../system/+             Status der Collectors (Birth / Close / Last Will)\n//    .../live/emt/+/+         nächste Busse an der Haltestelle am Startpunkt (nur mit EMT-Zugang)\n//    .../plan/+/+             beste direkte Busverbindung laut Fahrplan (GTFS) zur nächsten Abfahrt\n//    Takt alle 60 s           Zeitfenster, Vorab-Info, veraltete Daten\n//  Ausgänge:\n//    .../reco/<nutzer>/<route>   Status der Route (ok / warn / unbekannt), QoS 1, retained\n//    .../alerts/<nutzer>         Meldungen, QoS 1, nicht retained\n//\n//  Das Rad ist gesetzt. Eine Warnung gibt es, wenn\n//    - das Wetter während der Fahrt (Vorhersage) die persönliche Grenze überschreitet,\n//    - an der Startstation und im Umkreis keine Räder sind,\n//    - zu Fuß oder ÖPNV mindestens reco.altFasterMin Minuten schneller ist.\n//  Meldungen nur im Zeitfenster vor der Abfahrt (reco.windowMin):\n//    Vorab-Info (reco.preInfoMin vorher), Warnung, Entwarnung (nur nach einer Warnung).\n// ============================================================\nconst cfg = global.get('cfg');\nconst R = cfg.reco, P = cfg.prefix;\nlet st = context.get('st');\n// Zustand verwerfen, wenn sich das Präfix geändert hat (Context überlebt einen Deploy)\nif (st && !st.bus) st.bus = {};\nif (st && !st.plan) st.plan = {};\nif (!st || st.prefix !== P || !st.v2) {\n    st = { v2: true, prefix: P, profiles: {}, routes: {}, settings: {}, stations: {}, bikes: {},\n        weather: null, system: {}, sysAt: {}, last: {}, occ: {}, fresh: {}, bus: {}, plan: {} };\n    context.set('pending', {});\n}\nconst t = msg.topic || '';\nconst isEmpty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nconst keyOf = () => t.split('/').slice(-2).join('/');\nconst allKeys = () => Object.keys(st.profiles);\nlet affected = [];\n\nif (t.indexOf('/profiles/') >= 0) {\n    const key = keyOf();\n    if (isEmpty) {\n        delete st.profiles[key];\n        delete st.last[key];\n        context.set('st', st);\n        node.status({ fill: 'grey', shape: 'dot', text: 'Route entfernt: ' + key });\n        return [[{ topic: P + '/reco/' + key, payload: '', qos: 1, retain: true }]];\n    }\n    st.profiles[key] = msg.payload;\n    if (!msg.retain) st.fresh[key] = true;     // frisch berechnet = neue oder geänderte Route\n    affected = [key];\n} else if (t.indexOf('/routes/') >= 0) {\n    const key = keyOf();\n    if (isEmpty || typeof msg.payload !== 'object') delete st.routes[key];\n    else st.routes[key] = { departure: msg.payload.departure || null };\n    affected = st.profiles[key] ? [key] : [];\n} else if (t.indexOf('/users/') >= 0 && t.endsWith('/settings')) {\n    const user = t.split('/').slice(-2)[0];\n    if (isEmpty || typeof msg.payload !== 'object') delete st.settings[user];\n    else st.settings[user] = msg.payload;\n    affected = allKeys().filter(k => k.split('/')[0] === user);\n} else if (t.endsWith('/static/stations')) {\n    st.stations = {};\n    (Array.isArray(msg.payload) ? msg.payload : []).forEach(s => { st.stations[s.id] = s; });\n    affected = allKeys();\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    const id = t.split('/').pop();\n    st.bikes[id] = msg.payload;\n    // betroffen: Routen, deren Startstation diese ist oder in deren Umkreis sie liegt\n    affected = allKeys().filter(k => {\n        const p = st.profiles[k];\n        if (p.from.id === id || p.to.id === id) return true;\n        const s = st.stations[id];\n        return s && dist(s, p.from) <= R.nearbyStationM;\n    });\n} else if (t.endsWith('/live/weather')) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    st.weather = msg.payload;\n    affected = allKeys();\n} else if (t.indexOf('/plan/') >= 0) {\n    const key = keyOf();\n    if (isEmpty || typeof msg.payload !== 'object') delete st.plan[key];\n    else st.plan[key] = msg.payload;\n    affected = st.profiles[key] ? [key] : [];\n} else if (t.indexOf('/live/emt/') >= 0) {\n    const key = keyOf();\n    if (isEmpty || typeof msg.payload !== 'object') delete st.bus[key];\n    else st.bus[key] = msg.payload;\n    affected = st.profiles[key] ? [key] : [];\n} else if (t.indexOf('/system/') >= 0) {\n    const name = t.split('/').pop();\n    st.system[name] = String(msg.payload);\n    st.sysAt[name] = Date.now();\n    affected = allKeys();\n} else {\n    affected = allKeys();   // Takt\n}\n\nfunction dist(a, b) {\n    const kx = 111320 * Math.cos(a.lat * Math.PI / 180), ky = 110540;\n    return Math.hypot((a.lon - b.lon) * kx, (a.lat - b.lat) * ky);\n}\nconst DAYS = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];\nconst hm = ms => new Date(ms).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst num = x => String(Math.round(x * 10) / 10).replace('.', ',');\n\n// ---------- Uhrzeit in Madrid (Node-RED läuft evtl. in UTC) ----------\nfunction madridNow() {\n    const parts = {};\n    new Intl.DateTimeFormat('en-GB', {\n        timeZone: 'Europe/Madrid', weekday: 'short', year: 'numeric', month: '2-digit',\n        day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false\n    }).formatToParts(new Date()).forEach(p => { parts[p.type] = p.value; });\n    const wd = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday];\n    return { wd: wd, min: (Number(parts.hour) % 24) * 60 + Number(parts.minute),\n        date: parts.year + '-' + parts.month + '-' + parts.day };\n}\nfunction daysText(days) {\n    const d = (days || []).slice().sort();\n    if (d.join() === '1,2,3,4,5') return 'Mo–Fr';\n    if (d.length === 7) return 'täglich';\n    if (d.join() === '6,7') return 'Sa–So';\n    return d.map(x => DAYS[x]).join(', ');\n}\n// Nächste Abfahrt (heute oder in den nächsten 7 Tagen)\nfunction schedule(dep) {\n    if (!dep || !/^\\d{1,2}:\\d{2}$/.test(dep.time || '') || !Array.isArray(dep.days) || !dep.days.length) return null;\n    const now = madridNow();\n    const [h, m] = dep.time.split(':').map(Number);\n    for (let off = 0; off <= 7; off++) {\n        const wd = ((now.wd - 1 + off) % 7) + 1;\n        if (dep.days.indexOf(wd) < 0) continue;\n        const diff = off * 1440 + h * 60 + m - now.min;\n        if (diff < 0) continue;\n        return {\n            minutesLeft: diff,\n            inWindow: diff <= R.windowMin,\n            at: Math.floor(Date.now() / 60000) * 60000 + diff * 60000,\n            nextText: (off === 0 ? 'heute' : off === 1 ? 'morgen' : DAYS[wd]) + ' ' + dep.time,\n            occurrence: now.date + '+' + off + '|' + dep.time\n        };\n    }\n    return null;\n}\n\n// ---------- Wetter während der Fahrt ----------\nfunction tripWeather(from, to) {\n    const w = st.weather;\n    if (!w) return null;\n    const alive = (st.system.weather || '').indexOf('online') === 0 || w.ts > (st.sysAt.weather || 0);\n    // Simulationswerte gelten nur, solange der Simulator sendet (jede Minute alles neu)\n    if (w.demo ? Date.now() - w.ts > 2.5 * 60000 : (!alive || Date.now() - w.ts > R.weatherStaleMin * 60000)) return null;\n    // Vorhersage-Slots (15 min), die sich mit [Abfahrt, Ankunft] überschneiden\n    const slots = (w.forecast || []).filter(f => f.t + 15 * 60000 > from && f.t <= to);\n    const src = slots.length ? slots : [{ t: from, temp: w.temp, precip: w.precip, wind: w.wind }];\n    return {\n        source: slots.length ? 'Vorhersage' : 'aktuell',\n        slots: src,\n        maxPrecip: Math.max(...src.map(s => s.precip || 0)),\n        maxWind: Math.max(...src.map(s => s.wind || 0)),\n        minTemp: Math.min(...src.map(s => s.temp)),\n        maxTemp: Math.max(...src.map(s => s.temp)),\n        demo: !!w.demo\n    };\n}\n\nfunction evaluate(key, p) {\n    const now = Date.now();\n    const user = key.split('/')[0];\n    const set = Object.assign({}, R.defaultSettings, st.settings[user] || {});\n    const dep = (st.routes[key] || {}).departure || null;\n    const sch = schedule(dep);\n    const problems = [], hints = [], notes = [];\n\n    // ---------- Fahrzeit ----------\n    let bikeMin = (p.bike ? p.bike.min : 0) + R.dockMin;\n    if (p.bike && p.bike.ascent) bikeMin += p.bike.ascent * R.minPerHmUp;   // E-Bike: wenig Aufschlag\n    bikeMin = Math.round(bikeMin);\n\n    // ---------- Räder an der Startstation ----------\n    const sysB = st.system.bicimad || '';\n    const bAlive = id => st.bikes[id] && ((sysB.indexOf('online') === 0) || st.bikes[id].ts > (st.sysAt.bicimad || 0) || st.bikes[id].demo);\n    const fresh = id => bAlive(id) && now - st.bikes[id].ts < (st.bikes[id].demo ? 2.5 : R.staleMin) * 60000;\n    const sFrom = st.bikes[p.from.id], sTo = st.bikes[p.to.id];\n    let dataMissing = false, alt = null;\n    const avail = s => (s && s.renting !== false) ? s.bikes : 0;\n    if (!fresh(p.from.id)) {\n        dataMissing = true;\n        notes.push('BiciMAD-Daten fehlen' + (sysB ? ' (' + sysB + ')' : ''));\n    } else if (avail(sFrom) < R.okBikes) {\n        // Ausweichstation: nächste Station im Umkreis mit genug Rädern\n        const base = st.stations[p.from.id] || p.from;\n        alt = Object.values(st.stations)\n            .filter(s => s.id !== p.from.id && fresh(s.id) && avail(st.bikes[s.id]) >= R.okBikes)\n            .map(s => ({ id: s.id, name: s.name, distM: Math.round(dist(base, s) / 10) * 10, bikes: avail(st.bikes[s.id]) }))\n            .filter(s => s.distM <= R.nearbyStationM)\n            .sort((a, b) => a.distM - b.distM)[0] || null;\n        const n = avail(sFrom);\n        const here = (n === 0 ? 'keine Räder' : 'nur ' + n + (n === 1 ? ' Rad' : ' Räder')) + ' an ' + p.from.name;\n        if (alt) hints.push(here + ' – Ausweichstation ' + alt.name + ' (' + alt.distM + ' m, ' + alt.bikes + ' Räder)');\n        else problems.push(here + ', auch im Umkreis von ' + R.nearbyStationM + ' m');\n    }\n\n    // ---------- Wetter während der Fahrt ----------\n    const startT = sch ? sch.at : now;\n    const tw = tripWeather(startT, startT + bikeMin * 60000);\n    if (!tw) notes.push('ohne Wetterdaten (' + (st.system.weather || 'unbekannt') + ')');\n    else {\n        const rainLimit = set.rain === 'kein' ? R.rainLight : set.rain === 'leicht' ? R.rainHeavy : Infinity;\n        if (tw.maxPrecip >= rainLimit) {\n            const first = tw.slots.find(s => (s.precip || 0) >= rainLimit);\n            const when = tw.source !== 'Vorhersage' ? '' :\n                (first && first.t > startT ? ' ab ' + hm(first.t) : ' während der Fahrt') + ' erwartet';\n            problems.push((tw.maxPrecip >= R.rainHeavy ? 'starker Regen' : 'Regen') + when +\n                ' (' + num(tw.maxPrecip) + ' mm)');\n        }\n        if (tw.maxWind > set.windMax) problems.push('Wind bis ' + Math.round(tw.maxWind) + ' km/h (deine Grenze ' + set.windMax + ')');\n        if (tw.minTemp < set.tempMin) problems.push('nur ' + Math.round(tw.minTemp) + ' °C (deine Grenze ' + set.tempMin + ' °C)');\n        if (tw.maxTemp > set.tempMax) problems.push(Math.round(tw.maxTemp) + ' °C (deine Grenze ' + set.tempMax + ' °C)');\n    }\n\n    // ---------- ÖPNV: Fahrplan (GTFS) > EMT live > Schätzung ----------\n    let transitMin = Math.round(p.transit.min), transitLabel = 'ÖPNV (Schätzung)', bus = null, plan = null, noTransit = false;\n    const leaveIn = sch ? sch.minutesLeft : 0;\n    const b = st.bus[key];\n    let arr = [];\n    const walk = a => Math.ceil(((a.distM != null ? a.distM : (b && b.stop.distM)) || 0) / R.walkMPerMin);\n    if (b && b.stop && now - b.ts < R.busFreshMin * 60000) {\n        // Live-Ankünfte an bis zu 3 Haltestellen im Umkreis (Minuten seit dem Abruf abziehen)\n        const elapsed = Math.floor((now - b.ts) / 60000);\n        arr = (b.arrivals || []).map(a => Object.assign({}, a, { min: a.min - elapsed })).filter(a => a.min >= 0);\n        bus = { stop: b.stop.name, distM: b.stop.distM, walkMin: walk(b.stop),\n            next: arr.slice(0, 4).map(a => ({ line: a.line, min: a.min, destination: a.destination, stop: a.stop || b.stop.name })) };\n    }\n    // Fahrplan: nur wenn er für genau diese Abfahrt berechnet wurde\n    const pl = st.plan[key];\n    if (pl && (sch ? Math.abs(pl.depAt - sch.at) < 90000 : !pl.forDeparture && now - pl.depAt < 15 * 60000)) {\n        plan = { status: pl.status, line: pl.line, headsign: pl.headsign, board: pl.board, alight: pl.alight,\n            boardAt: pl.boardAt, headwayMin: pl.headwayMin, waitMin: pl.waitMin, rideMin: pl.rideMin, totalMin: pl.totalMin };\n        if (pl.status === 'ok') { transitMin = pl.totalMin; transitLabel = 'ÖPNV (Fahrplan)'; }\n        else if (pl.status === 'noservice') { noTransit = true; }\n        // 'nodirect': keine direkte Linie -> Schätzung bleibt (mit Umsteigen evtl. möglich)\n    }\n    if (bus && leaveIn <= R.busApplyMin) {\n        const norm = x => String(x).replace(/^0+(?=.)/, '').toUpperCase();\n        if (plan && plan.status === 'ok') {\n            // Fahrplan-Linie live an der Haltestelle? Dann echte statt geplanter Wartezeit\n            const live = arr.find(a => norm(a.line) === norm(plan.line) && a.min >= leaveIn + plan.board.walkMin);\n            if (live) {\n                const wait = live.min - leaveIn - plan.board.walkMin;\n                transitMin = Math.round(plan.board.walkMin + wait + plan.rideMin + plan.alight.walkMin);\n                transitLabel = 'ÖPNV (Fahrplan + EMT live)';\n                bus.used = { line: live.line, min: live.min, wait: wait, stop: live.stop || b.stop.name };\n            }\n        } else if (!plan) {\n            // kein Fahrplan: nächster erreichbarer Bus, Fahrzeit geschätzt\n            const catchable = arr.find(a => a.min >= leaveIn + walk(a));\n            if (catchable) {\n                const wait = catchable.min - leaveIn - walk(catchable);\n                transitMin = Math.round(p.transit.min - R.transitWaitMin - R.transitAccessMin / 2 + walk(catchable) + wait);\n                transitLabel = 'ÖPNV (EMT live)';\n                bus.used = { line: catchable.line, min: catchable.min, wait: wait, stop: catchable.stop || b.stop.name };\n            }\n        }\n    }\n\n    // ---------- Alternativen ----------\n    const alternatives = [{ mode: 'walk', label: 'zu Fuß', min: Math.round(p.walk.min) }];\n    if (!noTransit) alternatives.push({ mode: 'transit', label: transitLabel, min: transitMin });\n    alternatives.sort((a, b) => a.min - b.min);\n    const faster = alternatives.find(a => a.min <= bikeMin - R.altFasterMin);\n    if (faster) problems.push(faster.label.replace(/ \\(.*\\)/, '') + ' ' + (bikeMin - faster.min) +\n        ' min schneller (' + faster.min + ' statt ' + bikeMin + ' min)');\n\n    // ---------- Ergebnis ----------\n    const status = dataMissing ? 'unbekannt' : (problems.length ? 'warn' : 'ok');\n    const weatherText = !tw ? 'Wetter unbekannt' :\n        (tw.maxPrecip < R.rainLight ? 'trocken' : 'Regen bis ' + num(tw.maxPrecip) + ' mm') + ', ' +\n        (tw.minTemp === tw.maxTemp || Math.round(tw.minTemp) === Math.round(tw.maxTemp) ? Math.round(tw.maxTemp) + ' °C'\n            : Math.round(tw.minTemp) + '–' + Math.round(tw.maxTemp) + ' °C') +\n        ', Wind ' + Math.round(tw.maxWind) + ' km/h';\n    const bikesText = sFrom ? avail(sFrom) + (avail(sFrom) === 1 ? ' Rad' : ' Räder') + ' an ' + p.from.name : '';\n    const tr = alternatives.find(a => a.mode === 'transit');\n    const altText = (tr ? 'ÖPNV ca. ' + tr.min + ' min' : 'kein Bus zu dieser Zeit') + ', zu Fuß ' +\n        alternatives.find(a => a.mode === 'walk').min + ' min';\n    const headline = status === 'ok' ? '✓ Rad passt' : status === 'warn' ? '⚠ Heute lieber nicht Rad' : '? Daten fehlen';\n    const detail = status === 'ok' ? [alt ? hints[0] : bikesText, weatherText, 'ca. ' + bikeMin + ' min'].filter(Boolean).join(' · ')\n        : status === 'warn' ? problems.join(' · ') + '. Alternativen: ' + altText + (hints.length ? '. ' + hints[0] : '')\n        : notes.join(' · ');\n    return {\n        user: p.user, route: p.route, name: p.name, from: p.from.name, to: p.to.name,\n        status: status, headline: headline, detail: detail,\n        problems: problems, hints: hints, notes: notes, alternatives: alternatives,\n        bike: { min: bikeMin, bikes: sFrom ? avail(sFrom) : null, docks: sTo ? sTo.docks : null, alt: alt },\n        bus: bus,\n        plan: plan,\n        weather: tw ? { text: weatherText, source: tw.source, demo: tw.demo,\n            from: hm(startT), to: hm(startT + bikeMin * 60000) } : null,\n        settings: set,\n        departure: dep ? { time: dep.time, days: dep.days, text: daysText(dep.days) + ' ' + dep.time } : null,\n        nextDeparture: sch ? new Date(sch.at).toISOString() : null,\n        nextDepartureText: sch ? sch.nextText : null,\n        inWindow: !!(sch && sch.inWindow),\n        minutesLeft: sch ? sch.minutesLeft : null,\n        _sch: sch,\n        updated: new Date().toISOString()\n    };\n}\n\n// Bündeln (Debounce): mehrere Updates kurz hintereinander -> einmal nach 1 s rechnen\nconst pending = context.get('pending') || {};\naffected.forEach(k => { pending[k] = true; });\ncontext.set('pending', pending);\ncontext.set('st', st);\nif (!context.get('timer')) {\n    context.set('timer', true);\n    setTimeout(flushPending, 1000);\n}\nreturn null;\n\nfunction flushPending() {\n    context.set('timer', false);\n    const keys = Object.keys(context.get('pending') || {});\n    context.set('pending', {});\n    st = context.get('st');\n    const out = [];\n    for (const key of keys) {\n        const p = st.profiles[key];\n        if (!p) continue;\n        const r = evaluate(key, p);\n        const sch = r._sch;\n        delete r._sch;\n        const prev = st.last[key];\n        // nur senden, wenn sich inhaltlich etwas geändert hat (ohne Zeitstempel/Minuten)\n        // (Zielplätze und Details der Ausweichstation stehen nicht auf der Karte -> nicht vergleichen)\n        const sig = JSON.stringify([r.status, r.detail, r.problems, r.hints, r.notes, r.alternatives,\n            r.bike.min, r.bike.bikes, r.bus, r.plan, r.weather, r.settings, r.departure, r.nextDeparture, r.inWindow]);\n        if (!prev || prev.sig !== sig) out.push({ topic: P + '/reco/' + key, payload: r, qos: 1, retain: true });\n\n        // ---------- Meldungen ----------\n        const occKey = sch ? key + '|' + sch.occurrence : null;\n        const occ = occKey ? (st.occ[occKey] = st.occ[occKey] || { t: Date.now() }) : null;\n        const head = '„' + r.name + '“ (' + r.from + ' → ' + r.to + (sch ? ', ' + r.departure.time : '') + ')';\n        let text = null;\n        if (st.fresh[key] && !prev) {\n            text = 'Route „' + r.name + '“ (' + r.from + ' → ' + r.to + ') gespeichert: ' +\n                (r.departure ? r.departure.text : 'ohne Abfahrtszeit') +\n                '. Meldungen ab ' + R.windowMin + ' min vor der Abfahrt.';\n        }\n        delete st.fresh[key];\n        if (sch && sch.inWindow && r.status !== 'unbekannt') {\n            const msgOk = '✓ Rad passt für ' + head + ': ' + r.detail + '.';\n            const msgWarn = '⚠ Heute lieber nicht Rad für ' + head + ': ' + r.detail + '.';\n            let add = null;\n            if (r.status === 'warn' && !occ.warned) {\n                add = msgWarn; occ.warned = true; occ.pre = occ.pre || sch.minutesLeft <= R.preInfoMin;\n            } else if (r.status === 'ok' && occ.warned) {\n                add = '✓ Entwarnung für ' + head + ': Rad passt wieder. ' + r.detail + '.';\n                occ.warned = false; occ.pre = occ.pre || sch.minutesLeft <= R.preInfoMin;\n            } else if (!occ.pre && sch.minutesLeft <= R.preInfoMin) {\n                add = (r.status === 'ok' ? msgOk : msgWarn) + ' Abfahrt in ' + sch.minutesLeft + ' min.';\n                occ.pre = true;\n            }\n            if (add) text = text ? text + ' ' + add : add;\n        }\n        if (text) out.push({ topic: P + '/alerts/' + p.user, payload: text, qos: 1, retain: false });\n        st.last[key] = { sig: sig, status: r.status };\n    }\n    for (const k of Object.keys(st.occ)) if (Date.now() - st.occ[k].t > 2 * 86400000) delete st.occ[k];\n    context.set('st', st);\n    node.status({ fill: 'green', shape: 'dot', text: Object.keys(st.profiles).length + ' Routen, ' + out.length +\n        ' Nachrichten, ' + new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' }) });\n    if (out.length) node.send([out]);\n}\n",
+    "func": "// ============================================================\n//  Empfehlungsdienst: \"Kann ich meine BiciMAD-Fahrt wie geplant machen?\"\n//  Eingänge (alle per Wildcard abonniert, retained):\n//    .../profiles/+/+         Streckenprofil (Fahrzeit, Fußweg, ÖPNV-Schätzung)\n//    .../routes/+/+           Abfahrtszeit und Wochentage\n//    .../users/+/settings     persönliche Grenzen (Regen, Wind, Temperatur)\n//    .../static/stations      Stationsliste (für Ausweichstationen)\n//    .../live/bicimad/+       Räder/Plätze je Station\n//    .../live/weather         aktuelles Wetter + Vorhersage (15-min-Schritte)\n//    .../system/+             Status der Collectors (Birth / Close / Last Will)\n//    .../live/emt/+/+         nächste Busse an der Haltestelle am Startpunkt (nur mit EMT-Zugang)\n//    .../plan/+/+             beste direkte Busverbindung laut Fahrplan (GTFS) zur nächsten Abfahrt\n//    Takt alle 60 s           Zeitfenster, Vorab-Info, veraltete Daten\n//  Ausgänge:\n//    .../reco/<nutzer>/<route>   Status der Route (geplant / ok / warn / unbekannt), QoS 1, retained\n//    .../alerts/<nutzer>         Meldungen, QoS 1, nicht retained\n//\n//  Das Rad ist gesetzt. Eine Warnung gibt es, wenn\n//    - das Wetter während der Fahrt (Vorhersage) die persönliche Grenze überschreitet,\n//    - an der Startstation und im Umkreis keine Räder sind,\n//    - zu Fuß oder ÖPNV mindestens reco.altFasterMin Minuten schneller ist.\n//  Empfehlung und Meldungen nur im Zeitfenster vor der Abfahrt (reco.windowMin):\n//    Vorab-Info (reco.preInfoMin vorher), Warnung, Entwarnung (nur nach einer Warnung).\n//  Vorher ist die Route \"geplant\": Fahrzeit, Wetter-Vorschau (Vorhersage bis 24 h) und\n//  Busvergleich, aber kein Urteil und keine Räder (Räder sind nur kurzfristig aussagekräftig).\n// ============================================================\nconst cfg = global.get('cfg');\nconst R = cfg.reco, P = cfg.prefix;\nlet st = context.get('st');\n// Zustand verwerfen, wenn sich das Präfix geändert hat (Context überlebt einen Deploy)\nif (st && !st.bus) st.bus = {};\nif (st && !st.plan) st.plan = {};\nif (!st || st.prefix !== P || !st.v2) {\n    st = { v2: true, prefix: P, profiles: {}, routes: {}, settings: {}, stations: {}, bikes: {},\n        weather: null, system: {}, sysAt: {}, last: {}, occ: {}, fresh: {}, bus: {}, plan: {} };\n    context.set('pending', {});\n}\nconst t = msg.topic || '';\nconst isEmpty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nconst keyOf = () => t.split('/').slice(-2).join('/');\nconst allKeys = () => Object.keys(st.profiles);\nlet affected = [];\n\nif (t.indexOf('/profiles/') >= 0) {\n    const key = keyOf();\n    if (isEmpty) {\n        delete st.profiles[key];\n        delete st.last[key];\n        context.set('st', st);\n        node.status({ fill: 'grey', shape: 'dot', text: 'Route entfernt: ' + key });\n        return [[{ topic: P + '/reco/' + key, payload: '', qos: 1, retain: true }]];\n    }\n    st.profiles[key] = msg.payload;\n    if (!msg.retain) st.fresh[key] = true;     // frisch berechnet = neue oder geänderte Route\n    affected = [key];\n} else if (t.indexOf('/routes/') >= 0) {\n    const key = keyOf();\n    if (isEmpty || typeof msg.payload !== 'object') delete st.routes[key];\n    else st.routes[key] = { departure: msg.payload.departure || null };\n    affected = st.profiles[key] ? [key] : [];\n} else if (t.indexOf('/users/') >= 0 && t.endsWith('/settings')) {\n    const user = t.split('/').slice(-2)[0];\n    if (isEmpty || typeof msg.payload !== 'object') delete st.settings[user];\n    else st.settings[user] = msg.payload;\n    affected = allKeys().filter(k => k.split('/')[0] === user);\n} else if (t.endsWith('/static/stations')) {\n    st.stations = {};\n    (Array.isArray(msg.payload) ? msg.payload : []).forEach(s => { st.stations[s.id] = s; });\n    affected = allKeys();\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    const id = t.split('/').pop();\n    st.bikes[id] = msg.payload;\n    // betroffen: Routen, deren Startstation diese ist oder in deren Umkreis sie liegt\n    affected = allKeys().filter(k => {\n        const p = st.profiles[k];\n        if (p.from.id === id || p.to.id === id) return true;\n        const s = st.stations[id];\n        return s && dist(s, p.from) <= R.nearbyStationM;\n    });\n} else if (t.endsWith('/live/weather')) {\n    if (typeof msg.payload !== 'object' || isEmpty) return null;\n    st.weather = msg.payload;\n    affected = allKeys();\n} else if (t.indexOf('/plan/') >= 0) {\n    const key = keyOf();\n    if (isEmpty || typeof msg.payload !== 'object') delete st.plan[key];\n    else st.plan[key] = msg.payload;\n    affected = st.profiles[key] ? [key] : [];\n} else if (t.indexOf('/live/emt/') >= 0) {\n    const key = keyOf();\n    if (isEmpty || typeof msg.payload !== 'object') delete st.bus[key];\n    else st.bus[key] = msg.payload;\n    affected = st.profiles[key] ? [key] : [];\n} else if (t.indexOf('/system/') >= 0) {\n    const name = t.split('/').pop();\n    st.system[name] = String(msg.payload);\n    st.sysAt[name] = Date.now();\n    affected = allKeys();\n} else {\n    affected = allKeys();   // Takt\n}\n\nfunction dist(a, b) {\n    const kx = 111320 * Math.cos(a.lat * Math.PI / 180), ky = 110540;\n    return Math.hypot((a.lon - b.lon) * kx, (a.lat - b.lat) * ky);\n}\nconst DAYS = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];\nconst hm = ms => new Date(ms).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst num = x => String(Math.round(x * 10) / 10).replace('.', ',');\n\n// ---------- Uhrzeit in Madrid (Node-RED läuft evtl. in UTC) ----------\nfunction madridNow() {\n    const parts = {};\n    new Intl.DateTimeFormat('en-GB', {\n        timeZone: 'Europe/Madrid', weekday: 'short', year: 'numeric', month: '2-digit',\n        day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false\n    }).formatToParts(new Date()).forEach(p => { parts[p.type] = p.value; });\n    const wd = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday];\n    return { wd: wd, min: (Number(parts.hour) % 24) * 60 + Number(parts.minute),\n        date: parts.year + '-' + parts.month + '-' + parts.day };\n}\n// 'heute' / 'morgen' / Wochentag für einen Zeitpunkt (Madrider Datum)\nfunction dayLabel(ms) {\n    const ymd = d => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date(d));\n    if (ymd(ms) === ymd(Date.now())) return 'heute';\n    if (ymd(ms) === ymd(Date.now() + 86400000)) return 'morgen';\n    const wd = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short' }).format(new Date(ms));\n    return DAYS[{ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[wd]];\n}\nfunction daysText(days) {\n    const d = (days || []).slice().sort();\n    if (d.join() === '1,2,3,4,5') return 'Mo–Fr';\n    if (d.length === 7) return 'täglich';\n    if (d.join() === '6,7') return 'Sa–So';\n    return d.map(x => DAYS[x]).join(', ');\n}\n// Nächste Abfahrt (heute oder in den nächsten 7 Tagen)\nfunction schedule(dep) {\n    if (!dep || !/^\\d{1,2}:\\d{2}$/.test(dep.time || '') || !Array.isArray(dep.days) || !dep.days.length) return null;\n    const now = madridNow();\n    const [h, m] = dep.time.split(':').map(Number);\n    for (let off = 0; off <= 7; off++) {\n        const wd = ((now.wd - 1 + off) % 7) + 1;\n        if (dep.days.indexOf(wd) < 0) continue;\n        const diff = off * 1440 + h * 60 + m - now.min;\n        if (diff < 0) continue;\n        return {\n            minutesLeft: diff,\n            inWindow: diff <= R.windowMin,\n            at: Math.floor(Date.now() / 60000) * 60000 + diff * 60000,\n            nextText: (off === 0 ? 'heute' : off === 1 ? 'morgen' : DAYS[wd]) + ' ' + dep.time,\n            occurrence: now.date + '+' + off + '|' + dep.time\n        };\n    }\n    return null;\n}\n\n// ---------- Wetter während der Fahrt ----------\nfunction tripWeather(from, to) {\n    const w = st.weather;\n    if (!w) return null;\n    const alive = (st.system.weather || '').indexOf('online') === 0 || w.ts > (st.sysAt.weather || 0);\n    if (!alive || Date.now() - w.ts > R.weatherStaleMin * 60000) return null;\n    // Vorhersage-Slots (15 min), die sich mit [Abfahrt, Ankunft] überschneiden\n    const slots = (w.forecast || []).filter(f => f.t + 15 * 60000 > from && f.t <= to);\n    const src = slots.length ? slots : [{ t: from, temp: w.temp, precip: w.precip, wind: w.wind }];\n    return {\n        source: slots.length ? 'Vorhersage' : 'aktuell',\n        slots: src,\n        maxPrecip: Math.max(...src.map(s => s.precip || 0)),\n        maxWind: Math.max(...src.map(s => s.wind || 0)),\n        minTemp: Math.min(...src.map(s => s.temp)),\n        maxTemp: Math.max(...src.map(s => s.temp))\n    };\n}\n\nfunction evaluate(key, p) {\n    const now = Date.now();\n    const user = key.split('/')[0];\n    const set = Object.assign({}, R.defaultSettings, st.settings[user] || {});\n    const dep = (st.routes[key] || {}).departure || null;\n    const sch = schedule(dep);\n    const planned = !!(sch && !sch.inWindow);           // vor dem Zeitfenster: nur Vorschau\n    const windowStart = sch ? sch.at - R.windowMin * 60000 : null;\n    const problems = [], hints = [], notes = [];\n\n    // ---------- Fahrzeit ----------\n    let bikeMin = (p.bike ? p.bike.min : 0) + R.dockMin;\n    if (p.bike && p.bike.ascent) bikeMin += p.bike.ascent * R.minPerHmUp;   // E-Bike: wenig Aufschlag\n    bikeMin = Math.round(bikeMin);\n\n    // ---------- Räder an der Startstation ----------\n    const sysB = st.system.bicimad || '';\n    const bAlive = id => st.bikes[id] && ((sysB.indexOf('online') === 0) || st.bikes[id].ts > (st.sysAt.bicimad || 0));\n    const fresh = id => bAlive(id) && now - st.bikes[id].ts < R.staleMin * 60000;\n    const sFrom = st.bikes[p.from.id], sTo = st.bikes[p.to.id];\n    let dataMissing = false, alt = null;\n    const avail = s => (s && s.renting !== false) ? s.bikes : 0;\n    if (planned) {\n        // Räder erst im Zeitfenster bewerten\n    } else if (!fresh(p.from.id)) {\n        dataMissing = true;\n        notes.push('BiciMAD-Daten fehlen' + (sysB ? ' (' + sysB + ')' : ''));\n    } else if (avail(sFrom) < R.okBikes) {\n        // Ausweichstation: nächste Station im Umkreis mit genug Rädern\n        const base = st.stations[p.from.id] || p.from;\n        alt = Object.values(st.stations)\n            .filter(s => s.id !== p.from.id && fresh(s.id) && avail(st.bikes[s.id]) >= R.okBikes)\n            .map(s => ({ id: s.id, name: s.name, distM: Math.round(dist(base, s) / 10) * 10, bikes: avail(st.bikes[s.id]) }))\n            .filter(s => s.distM <= R.nearbyStationM)\n            .sort((a, b) => a.distM - b.distM)[0] || null;\n        const n = avail(sFrom);\n        const here = (n === 0 ? 'keine Räder' : 'nur ' + n + (n === 1 ? ' Rad' : ' Räder')) + ' an ' + p.from.name;\n        if (alt) hints.push(here + ' – Ausweichstation ' + alt.name + ' (' + alt.distM + ' m, ' + alt.bikes + ' Räder)');\n        else problems.push(here + ', auch im Umkreis von ' + R.nearbyStationM + ' m');\n    }\n\n    // ---------- Wetter während der Fahrt ----------\n    const startT = sch ? sch.at : now;\n    let tw = tripWeather(startT, startT + bikeMin * 60000);\n    if (planned && tw && tw.source !== 'Vorhersage') {\n        tw = null;                                          // Abfahrt liegt hinter der Vorhersage (24 h)\n        notes.push('Wetter-Vorschau, sobald die Abfahrt weniger als 24 h entfernt ist');\n    } else if (!tw) {\n        notes.push('Wetterdaten fehlen (' + (st.system.weather || 'unbekannt') + ')');\n        if (!planned) dataMissing = true;                   // ohne Wetter kein Urteil (keine falsche Entwarnung)\n    }\n    else {\n        const rainLimit = set.rain === 'kein' ? R.rainLight : set.rain === 'leicht' ? R.rainHeavy : Infinity;\n        if (tw.maxPrecip >= rainLimit) {\n            const first = tw.slots.find(s => (s.precip || 0) >= rainLimit);\n            const when = tw.source !== 'Vorhersage' ? '' :\n                (first && first.t > startT ? ' ab ' + hm(first.t) : ' während der Fahrt') + ' erwartet';\n            problems.push((tw.maxPrecip >= R.rainHeavy ? 'starker Regen' : 'Regen') + when +\n                ' (' + num(tw.maxPrecip) + ' mm)');\n        }\n        if (tw.maxWind > set.windMax) problems.push('Wind bis ' + Math.round(tw.maxWind) + ' km/h (deine Grenze ' + set.windMax + ')');\n        if (tw.minTemp < set.tempMin) problems.push('nur ' + Math.round(tw.minTemp) + ' °C (deine Grenze ' + set.tempMin + ' °C)');\n        if (tw.maxTemp > set.tempMax) problems.push(Math.round(tw.maxTemp) + ' °C (deine Grenze ' + set.tempMax + ' °C)');\n    }\n\n    // ---------- ÖPNV: Fahrplan (GTFS) > EMT live > Schätzung ----------\n    let transitMin = Math.round(p.transit.min), transitLabel = 'ÖPNV (Schätzung)', bus = null, plan = null, noTransit = false;\n    const leaveIn = sch ? sch.minutesLeft : 0;\n    const b = st.bus[key];\n    let arr = [];\n    const walk = a => Math.ceil(((a.distM != null ? a.distM : (b && b.stop.distM)) || 0) / R.walkMPerMin);\n    if (b && b.stop && now - b.ts < R.busFreshMin * 60000) {\n        // Live-Ankünfte an bis zu 3 Haltestellen im Umkreis (Minuten seit dem Abruf abziehen)\n        const elapsed = Math.floor((now - b.ts) / 60000);\n        arr = (b.arrivals || []).map(a => Object.assign({}, a, { min: a.min - elapsed })).filter(a => a.min >= 0);\n        bus = { stop: b.stop.name, distM: b.stop.distM, walkMin: walk(b.stop),\n            next: arr.slice(0, 4).map(a => ({ line: a.line, min: a.min, destination: a.destination, stop: a.stop || b.stop.name })) };\n    }\n    // Fahrplan: nur wenn er für genau diese Abfahrt berechnet wurde\n    const pl = st.plan[key];\n    if (pl && (sch ? Math.abs(pl.depAt - sch.at) < 90000 : !pl.forDeparture && now - pl.depAt < 15 * 60000)) {\n        plan = { status: pl.status, line: pl.line, headsign: pl.headsign, board: pl.board, alight: pl.alight,\n            boardAt: pl.boardAt, headwayMin: pl.headwayMin, waitMin: pl.waitMin, rideMin: pl.rideMin, totalMin: pl.totalMin };\n        if (pl.status === 'ok') { transitMin = pl.totalMin; transitLabel = 'ÖPNV (Fahrplan)'; }\n        else if (pl.status === 'noservice') { noTransit = true; }\n        // 'nodirect': keine direkte Linie -> Schätzung bleibt (mit Umsteigen evtl. möglich)\n    }\n    if (bus && leaveIn <= R.busApplyMin) {\n        const norm = x => String(x).replace(/^0+(?=.)/, '').toUpperCase();\n        if (plan && plan.status === 'ok') {\n            // Fahrplan-Linie live an der Haltestelle? Dann echte statt geplanter Wartezeit\n            const live = arr.find(a => norm(a.line) === norm(plan.line) && a.min >= leaveIn + plan.board.walkMin);\n            if (live) {\n                const wait = live.min - leaveIn - plan.board.walkMin;\n                transitMin = Math.round(plan.board.walkMin + wait + plan.rideMin + plan.alight.walkMin);\n                transitLabel = 'ÖPNV (Fahrplan + EMT live)';\n                bus.used = { line: live.line, min: live.min, wait: wait, stop: live.stop || b.stop.name };\n            }\n        } else if (!plan) {\n            // kein Fahrplan: nächster erreichbarer Bus, Fahrzeit geschätzt\n            const catchable = arr.find(a => a.min >= leaveIn + walk(a));\n            if (catchable) {\n                const wait = catchable.min - leaveIn - walk(catchable);\n                transitMin = Math.round(p.transit.min - R.transitWaitMin - R.transitAccessMin / 2 + walk(catchable) + wait);\n                transitLabel = 'ÖPNV (EMT live)';\n                bus.used = { line: catchable.line, min: catchable.min, wait: wait, stop: catchable.stop || b.stop.name };\n            }\n        }\n    }\n\n    // ---------- Alternativen ----------\n    const alternatives = [{ mode: 'walk', label: 'zu Fuß', min: Math.round(p.walk.min) }];\n    if (!noTransit) alternatives.push({ mode: 'transit', label: transitLabel, min: transitMin });\n    alternatives.sort((a, b) => a.min - b.min);\n    const faster = alternatives.find(a => a.min <= bikeMin - R.altFasterMin);\n    if (faster) problems.push(faster.label.replace(/ \\(.*\\)/, '') + ' ' + (bikeMin - faster.min) +\n        ' min schneller (' + faster.min + ' statt ' + bikeMin + ' min)');\n\n    // ---------- Ergebnis ----------\n    const status = planned ? 'geplant' : dataMissing ? 'unbekannt' : (problems.length ? 'warn' : 'ok');\n    // geplant: mögliche Probleme nur als Vorschau, ohne Urteil\n    const preview = planned ? problems.splice(0) : [];\n    const weatherText = !tw ? 'Wetter unbekannt' :\n        (tw.maxPrecip < R.rainLight ? 'trocken' : 'Regen bis ' + num(tw.maxPrecip) + ' mm') + ', ' +\n        (tw.minTemp === tw.maxTemp || Math.round(tw.minTemp) === Math.round(tw.maxTemp) ? Math.round(tw.maxTemp) + ' °C'\n            : Math.round(tw.minTemp) + '–' + Math.round(tw.maxTemp) + ' °C') +\n        ', Wind ' + Math.round(tw.maxWind) + ' km/h';\n    const bikesText = sFrom ? avail(sFrom) + (avail(sFrom) === 1 ? ' Rad' : ' Räder') + ' an ' + p.from.name : '';\n    const tr = alternatives.find(a => a.mode === 'transit');\n    const altText = (tr ? 'ÖPNV ca. ' + tr.min + ' min' : 'kein Bus zu dieser Zeit') + ', zu Fuß ' +\n        alternatives.find(a => a.mode === 'walk').min + ' min';\n    const headline = status === 'ok' ? '✓ Rad passt' : status === 'warn' ? '⚠ Heute lieber nicht Rad'\n        : status === 'geplant' ? '🕒 Geplant · Empfehlung ab ' + hm(windowStart) : '? Daten fehlen';\n    const detail = status === 'geplant' ? ['Abfahrt ' + sch.nextText,\n            'ca. ' + bikeMin + ' min mit dem Rad', tw ? 'Vorschau: ' + weatherText : null,\n            preview.length ? 'laut Vorhersage: ' + preview.join(', ') : null].filter(Boolean).join(' · ')\n        : status === 'ok' ? [alt ? hints[0] : bikesText, weatherText, 'ca. ' + bikeMin + ' min'].filter(Boolean).join(' · ')\n        : status === 'warn' ? problems.join(' · ') + '. Alternativen: ' + altText + (hints.length ? '. ' + hints[0] : '')\n        : notes.join(' · ');\n    return {\n        user: p.user, route: p.route, name: p.name, from: p.from.name, to: p.to.name,\n        status: status, headline: headline, detail: detail,\n        problems: problems, preview: preview, hints: hints, notes: notes, alternatives: alternatives,\n        bike: { min: bikeMin, bikes: (sFrom && !planned) ? avail(sFrom) : null, docks: (sTo && !planned) ? sTo.docks : null, alt: alt },\n        bus: bus,\n        plan: plan,\n        weather: tw ? { text: weatherText, source: tw.source,\n            from: hm(startT), to: hm(startT + bikeMin * 60000) } : null,\n        settings: set,\n        departure: dep ? { time: dep.time, days: dep.days, text: daysText(dep.days) + ' ' + dep.time } : null,\n        nextDeparture: sch ? new Date(sch.at).toISOString() : null,\n        nextDepartureText: sch ? sch.nextText : null,\n        inWindow: !!(sch && sch.inWindow),\n        windowStart: windowStart ? new Date(windowStart).toISOString() : null,\n        windowStartText: windowStart ? hm(windowStart) : null,\n        windowStartLabel: windowStart ? dayLabel(windowStart) + ' ' + hm(windowStart) : null,\n        minutesLeft: sch ? sch.minutesLeft : null,\n        _sch: sch,\n        updated: new Date().toISOString()\n    };\n}\n\n// Bündeln (Debounce): mehrere Updates kurz hintereinander -> einmal nach 1 s rechnen\nconst pending = context.get('pending') || {};\naffected.forEach(k => { pending[k] = true; });\ncontext.set('pending', pending);\ncontext.set('st', st);\nif (!context.get('timer')) {\n    context.set('timer', true);\n    setTimeout(flushPending, 1000);\n}\nreturn null;\n\nfunction flushPending() {\n    context.set('timer', false);\n    const keys = Object.keys(context.get('pending') || {});\n    context.set('pending', {});\n    st = context.get('st');\n    const out = [];\n    for (const key of keys) {\n        const p = st.profiles[key];\n        if (!p) continue;\n        const r = evaluate(key, p);\n        const sch = r._sch;\n        delete r._sch;\n        const prev = st.last[key];\n        // nur senden, wenn sich inhaltlich etwas geändert hat (ohne Zeitstempel/Minuten)\n        // (Zielplätze und Details der Ausweichstation stehen nicht auf der Karte -> nicht vergleichen)\n        const sig = JSON.stringify([r.status, r.detail, r.problems, r.preview, r.hints, r.notes, r.alternatives,\n            r.bike.min, r.bike.bikes, r.bus, r.plan, r.weather, r.settings, r.departure, r.nextDeparture, r.inWindow]);\n        if (!prev || prev.sig !== sig) out.push({ topic: P + '/reco/' + key, payload: r, qos: 1, retain: true });\n\n        // ---------- Meldungen ----------\n        const occKey = sch ? key + '|' + sch.occurrence : null;\n        const occ = occKey ? (st.occ[occKey] = st.occ[occKey] || { t: Date.now() }) : null;\n        const head = '„' + r.name + '“ (' + r.from + ' → ' + r.to + (sch ? ', ' + r.departure.time : '') + ')';\n        let text = null;\n        if (st.fresh[key] && !prev) {\n            text = 'Route „' + r.name + '“ (' + r.from + ' → ' + r.to + ') gespeichert: ' +\n                (r.departure ? r.departure.text : 'ohne Abfahrtszeit') +\n                '. Empfehlung und Meldungen ab ' + R.windowMin + ' min vor der Abfahrt' +\n                (r.status === 'geplant' ? ' (' + r.windowStartLabel + ')' : '') + '.';\n        }\n        delete st.fresh[key];\n        if (sch && sch.inWindow && r.status !== 'unbekannt') {\n            const msgOk = '✓ Rad passt für ' + head + ': ' + r.detail + '.';\n            const msgWarn = '⚠ Heute lieber nicht Rad für ' + head + ': ' + r.detail + '.';\n            let add = null;\n            if (r.status === 'warn' && !occ.warned) {\n                add = msgWarn; occ.warned = true; occ.pre = occ.pre || sch.minutesLeft <= R.preInfoMin;\n            } else if (r.status === 'ok' && occ.warned) {\n                add = '✓ Entwarnung für ' + head + ': Rad passt wieder. ' + r.detail + '.';\n                occ.warned = false; occ.pre = occ.pre || sch.minutesLeft <= R.preInfoMin;\n            } else if (!occ.pre && sch.minutesLeft <= R.preInfoMin) {\n                add = (r.status === 'ok' ? msgOk : msgWarn) + ' Abfahrt in ' + sch.minutesLeft + ' min.';\n                occ.pre = true;\n            }\n            if (add) text = text ? text + ' ' + add : add;\n        }\n        if (text) out.push({ topic: P + '/alerts/' + p.user, payload: text, qos: 1, retain: false });\n        st.last[key] = { sig: sig, status: r.status };\n    }\n    for (const k of Object.keys(st.occ)) if (Date.now() - st.occ[k].t > 2 * 86400000) delete st.occ[k];\n    context.set('st', st);\n    node.status({ fill: 'green', shape: 'dot', text: Object.keys(st.profiles).length + ' Routen, ' + out.length +\n        ' Nachrichten, ' + new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' }) });\n    if (out.length) node.send([out]);\n}\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -773,13 +742,13 @@
     "type": "tab",
     "label": "Dashboard",
     "disabled": false,
-    "info": "Rolle B. Dashboard 2.0 unter http://localhost:1880/dashboard mit drei Seiten: Empfehlungen, Routen verwalten, System & Demo."
+    "info": "Rolle B. Dashboard 2.0 unter http://localhost:1880/dashboard mit vier Seiten: Routenübersicht, Statistik, Routen verwalten, System & Demo."
   },
   {
     "id": "4e73483f5a10193d",
     "type": "comment",
     "z": "cf931b46039477f7",
-    "name": "Seite \"Meine Routen\": eine Karte pro Route (Rad ok / Warnung)",
+    "name": "Seite \"Routenübersicht\": eine Karte pro Route (Rad ok / Warnung)",
     "info": "Die Function **Detailansicht** baut für jede Route die komplette Ansicht (HTML). Das Template-Widget zeigt die Route, die im jeweiligen Browser gewählt ist (Auswahl wird im Browser gespeichert).",
     "x": 260,
     "y": 40,
@@ -810,7 +779,7 @@
     "id": "7a24b4f24c3b3da1",
     "type": "function",
     "name": "Karten bauen",
-    "func": "// .../reco/+/+ -> Daten für die Routenkarten (eine Karte pro Route)\nconst cfg = global.get('cfg');\nlet recos = flow.get('recos');\nif (!recos || recos.__prefix !== cfg.prefix) recos = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') delete recos[key];\nelse recos[key] = msg.payload;\nflow.set('recos', recos);\nconst routes = Object.keys(recos).filter(k => k !== '__prefix').sort().map(k => {\n    const r = recos[k];\n    return {\n        key: k, user: r.user, name: r.name, from: r.from, to: r.to,\n        status: r.status, headline: r.headline,\n        problems: r.problems || [], hints: r.hints || [], notes: r.notes || [],\n        alternatives: r.alternatives || [], bike: r.bike || {}, bus: r.bus || null, plan: r.plan || null, weather: r.weather,\n        settings: r.settings, departureText: r.departure ? r.departure.text : null,\n        nextDeparture: r.nextDeparture, nextDepartureText: r.nextDepartureText,\n        windowMin: cfg.reco.windowMin\n    };\n});\nreturn { payload: { routes: routes } };\n",
+    "func": "// .../reco/+/+ -> Daten für die Routenkarten (eine Karte pro Route)\nconst cfg = global.get('cfg');\nlet recos = flow.get('recos');\nif (!recos || recos.__prefix !== cfg.prefix) recos = { __prefix: cfg.prefix };\nconst key = msg.topic.split('/').slice(-2).join('/');\nconst empty = msg.payload === '' || msg.payload == null ||\n    (Buffer.isBuffer(msg.payload) && msg.payload.length === 0);\nif (empty || typeof msg.payload !== 'object') delete recos[key];\nelse recos[key] = msg.payload;\nflow.set('recos', recos);\nconst routes = Object.keys(recos).filter(k => k !== '__prefix').sort().map(k => {\n    const r = recos[k];\n    return {\n        key: k, user: r.user, name: r.name, from: r.from, to: r.to,\n        status: r.status, headline: r.headline,\n        problems: r.problems || [], preview: r.preview || [], hints: r.hints || [], notes: r.notes || [],\n        alternatives: r.alternatives || [], bike: r.bike || {}, bus: r.bus || null, plan: r.plan || null, weather: r.weather,\n        settings: r.settings, departureText: r.departure ? r.departure.text : null,\n        nextDeparture: r.nextDeparture, nextDepartureText: r.nextDepartureText, windowStartText: r.windowStartText || null,\n        windowMin: cfg.reco.windowMin\n    };\n});\nreturn { payload: { routes: routes } };\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -837,7 +806,7 @@
     "width": "12",
     "height": "0",
     "head": "",
-    "format": "<template>\n    <div class=\"mm\">\n        <div v-if=\"!routes.length\" class=\"mm-empty\">\n            Noch keine Routen. Lege unter „Routen &amp; Einstellungen“ eine an, mit dem Python-Client\n            oder unter „System &amp; Demo“ mit „Demo-Route anlegen“.\n        </div>\n        <div class=\"mm-grid\">\n            <div v-for=\"r in routes\" :key=\"r.key\" class=\"mm-rc\" :class=\"'mm-' + r.status\">\n                <div class=\"mm-head\">\n                    <div>\n                        <div class=\"mm-name\">{{ r.name }}</div>\n                        <div class=\"mm-sub\">{{ r.user }} · 🚲 {{ r.from }} → {{ r.to }}</div>\n                    </div>\n                    <div class=\"mm-badges\">\n                        <span v-if=\"active(r)\" class=\"mm-badge mm-badge-on\">aktiv</span>\n                        <span v-if=\"r.weather && r.weather.demo\" class=\"mm-badge mm-badge-demo\">Simulation</span>\n                    </div>\n                </div>\n\n                <div class=\"mm-status\">\n                    <span class=\"mm-headline\">{{ r.headline }}</span>\n                    <span v-if=\"r.bike.min\" class=\"mm-min\">{{ r.bike.min }} min</span>\n                </div>\n\n                <ul v-if=\"r.problems.length\" class=\"mm-list mm-problems\">\n                    <li v-for=\"(p, i) in r.problems\" :key=\"'p' + i\">{{ p }}</li>\n                </ul>\n                <ul v-if=\"r.hints.length\" class=\"mm-list mm-hints\">\n                    <li v-for=\"(h, i) in r.hints\" :key=\"'h' + i\">{{ h }}</li>\n                </ul>\n                <div v-if=\"r.status === 'warn'\" class=\"mm-alts\">\n                    Alternativen:\n                    <span v-for=\"(a, i) in r.alternatives\" :key=\"a.mode\">{{ i ? ' · ' : ' ' }}{{ a.mode === 'transit' ? '🚌' : '🚶' }} {{ a.label }} {{ a.min }} min</span>\n                </div>\n\n                <div class=\"mm-facts\">\n                    <div v-if=\"r.bike.bikes !== null && r.bike.bikes !== undefined\">\n                        🚲 {{ r.bike.bikes }} {{ r.bike.bikes === 1 ? 'Rad' : 'Räder' }} an {{ r.from }}\n                    </div>\n                    <div v-if=\"r.weather\">{{ r.weather.text.indexOf('trocken') === 0 ? '🌤' : '🌧' }} {{ r.weather.text }} <span class=\"mm-dim\">({{ r.weather.source === 'Vorhersage' ? 'Vorhersage ' + r.weather.from + '–' + r.weather.to : 'aktuelles Wetter, Vorhersage reicht noch nicht bis zur Abfahrt' }})</span></div>\n                    <div v-if=\"r.status !== 'warn' && r.alternatives.length\">\n                        ⚖ Zum Vergleich:<span v-for=\"(a, i) in r.alternatives\" :key=\"'c' + a.mode\">{{ i ? ' ·' : '' }} {{ a.mode === 'transit' ? '🚌' : '🚶' }} {{ a.label }} {{ a.min }} min</span>\n                    </div>\n                    <div v-if=\"r.plan\">\n                        🗓 <template v-if=\"r.plan.status === 'ok'\">Fahrplan: Bus {{ r.plan.line }} → {{ r.plan.headsign }} ab {{ r.plan.board.name }}\n                        {{ r.plan.boardAt ? 'um ' + r.plan.boardAt : 'alle ' + r.plan.headwayMin + ' min' }}, {{ r.plan.rideMin }} min bis {{ r.plan.alight.name }}\n                        <span class=\"mm-dim\">(Fußwege {{ r.plan.board.walkMin }} + {{ r.plan.alight.walkMin }} min)</span></template>\n                        <template v-else-if=\"r.plan.status === 'noservice'\">Fahrplan: zu dieser Zeit fährt kein direkter Bus</template>\n                        <template v-else>Fahrplan: keine direkte Buslinie <span class=\"mm-dim\">(mit Umsteigen evtl. möglich, ÖPNV geschätzt)</span></template>\n                    </div>\n                    <div v-if=\"r.bus\">\n                        🚏 {{ r.bus.stop }} ({{ r.bus.distM }} m):<span v-for=\"(b, i) in r.bus.next\" :key=\"'b' + i\">{{ i ? ',' : '' }} {{ b.line }} in {{ b.min }} min<span v-if=\"b.stop && b.stop !== r.bus.stop\" class=\"mm-dim\"> ({{ b.stop }})</span></span><span v-if=\"!r.bus.next.length\"> gerade keine Busse gemeldet</span>\n                        <span class=\"mm-dim\"> (EMT live{{ r.bus.used ? ', Bus ' + r.bus.used.line + ' erreichbar, ' + r.bus.used.wait + ' min warten' : '' }})</span>\n                    </div>\n                    <div v-for=\"(n, i) in r.notes\" :key=\"'n' + i\" class=\"mm-dim\">ℹ {{ n }}</div>\n                </div>\n\n                <div class=\"mm-foot\">\n                    <span>🕒 {{ r.departureText || 'keine Abfahrtszeit' }} · {{ countdown(r) }}</span>\n                    <span v-if=\"r.settings\" class=\"mm-dim\">Grenzen: {{ settingsText(r.settings) }}</span>\n                </div>\n            </div>\n        </div>\n    </div>\n</template>\n\n<script>\nexport default {\n    data () {\n        return { now: Date.now(), timer: null }\n    },\n    computed: {\n        routes () {\n            return (this.msg && this.msg.payload && this.msg.payload.routes) || []\n        }\n    },\n    methods: {\n        minutesLeft (r) {\n            return r.nextDeparture ? Math.round((Date.parse(r.nextDeparture) - this.now) / 60000) : null\n        },\n        active (r) {\n            const m = this.minutesLeft(r)\n            return m !== null && m >= 0 && m <= (r.windowMin || 30)\n        },\n        countdown (r) {\n            const m = this.minutesLeft(r)\n            if (m === null) return 'keine Fahrt in den nächsten 7 Tagen'\n            if (m <= 0) return 'Abfahrt jetzt'\n            if (m < 60) return 'Abfahrt in ' + m + ' min'\n            return 'nächste: ' + r.nextDepartureText\n        },\n        settingsText (s) {\n            const rain = { kein: 'kein Regen', leicht: 'leichter Regen ok', egal: 'Regen egal' }[s.rain] || s.rain\n            return rain + ', Wind bis ' + s.windMax + ' km/h, ' + s.tempMin + '–' + s.tempMax + ' °C'\n        }\n    },\n    mounted () {\n        // Countdown selbst weiterzählen (der Status kommt nur bei Änderungen neu)\n        this.timer = setInterval(() => { this.now = Date.now() }, 15000)\n    },\n    unmounted () {\n        clearInterval(this.timer)\n    }\n}\n</script>\n\n<style>\n.mm { width: 100%; }\n.mm-empty { color: #6b7280; padding: 8px 2px; }\n.mm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }\n.mm-rc { border: 1px solid #dde1e4; border-left: 7px solid #9ca3af; border-radius: 10px; padding: 14px 16px; background: #fff; display: flex; flex-direction: column; gap: 10px; }\n.mm-ok { border-left-color: #1f7a4d; }\n.mm-warn { border-left-color: #c2410c; }\n.mm-unbekannt { border-left-color: #9ca3af; }\n.mm-head { display: flex; justify-content: space-between; gap: 8px; }\n.mm-name { font-weight: 700; font-size: 17px; color: #111827; }\n.mm-sub { font-size: 13px; color: #6b7280; }\n.mm-badges { display: flex; gap: 4px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }\n.mm-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }\n.mm-badge-on { background: #1f7a4d; color: #fff; }\n.mm-badge-demo { background: #e0e7ff; color: #3730a3; }\n.mm-status { display: flex; align-items: baseline; gap: 10px; }\n.mm-headline { font-size: 22px; font-weight: 700; }\n.mm-ok .mm-headline { color: #1f7a4d; }\n.mm-warn .mm-headline { color: #c2410c; }\n.mm-unbekannt .mm-headline { color: #6b7280; }\n.mm-min { margin-left: auto; font-size: 20px; font-weight: 700; color: #111827; white-space: nowrap; }\n.mm-list { margin: 0; padding-left: 18px; font-size: 14px; }\n.mm-problems { color: #9a3412; }\n.mm-hints { color: #6b4e00; }\n.mm-alts { font-size: 14px; background: #fff4ec; color: #7c2d12; border-radius: 6px; padding: 6px 10px; }\n.mm-facts { font-size: 13.5px; color: #374151; display: flex; flex-direction: column; gap: 3px; }\n.mm-dim { color: #9ca3af; }\n.mm-foot { font-size: 13px; color: #374151; border-top: 1px solid #eef0f2; padding-top: 8px; display: flex; flex-direction: column; gap: 2px; }\n</style>\n",
+    "format": "<template>\n    <div class=\"mm\">\n        <div v-if=\"!routes.length\" class=\"mm-empty\">\n            Noch keine Routen. Lege unter „Routen verwalten“ eine an, mit dem Python-Client\n            oder unter „System &amp; Demo“ mit „Demo-Route anlegen“.\n        </div>\n        <div class=\"mm-grid\">\n            <div v-for=\"r in routes\" :key=\"r.key\" class=\"mm-rc\" :class=\"'mm-' + r.status\">\n                <div class=\"mm-head\">\n                    <div>\n                        <div class=\"mm-name\">{{ r.name }}</div>\n                        <div class=\"mm-sub\">{{ r.user }} · 🚲 {{ r.from }} → {{ r.to }}</div>\n                    </div>\n                    <div class=\"mm-badges\">\n                        <span v-if=\"active(r)\" class=\"mm-badge mm-badge-on\">aktiv</span>\n                    </div>\n                </div>\n\n                <div class=\"mm-status\">\n                    <span class=\"mm-headline\">{{ r.headline }}</span>\n                    <span v-if=\"r.bike.min\" class=\"mm-min\">{{ r.bike.min }} min</span>\n                </div>\n\n                <ul v-if=\"r.problems.length\" class=\"mm-list mm-problems\">\n                    <li v-for=\"(p, i) in r.problems\" :key=\"'p' + i\">{{ p }}</li>\n                </ul>\n                <ul v-if=\"r.preview.length\" class=\"mm-list mm-preview\">\n                    <li v-for=\"(v, i) in r.preview\" :key=\"'v' + i\">laut Vorhersage: {{ v }} <span class=\"mm-dim\">(endgültig ab {{ r.windowStartText }})</span></li>\n                </ul>\n                <ul v-if=\"r.hints.length\" class=\"mm-list mm-hints\">\n                    <li v-for=\"(h, i) in r.hints\" :key=\"'h' + i\">{{ h }}</li>\n                </ul>\n                <div v-if=\"r.status === 'warn'\" class=\"mm-alts\">\n                    Alternativen:\n                    <span v-for=\"(a, i) in r.alternatives\" :key=\"a.mode\">{{ i ? ' · ' : ' ' }}{{ a.mode === 'transit' ? '🚌' : '🚶' }} {{ a.label }} {{ a.min }} min</span>\n                </div>\n\n                <div class=\"mm-facts\">\n                    <div v-if=\"r.bike.bikes !== null && r.bike.bikes !== undefined\">\n                        🚲 {{ r.bike.bikes }} {{ r.bike.bikes === 1 ? 'Rad' : 'Räder' }} an {{ r.from }}\n                    </div>\n                    <div v-if=\"r.weather\">{{ r.weather.text.indexOf('trocken') === 0 ? '🌤' : '🌧' }} {{ r.status === 'geplant' ? 'Vorschau: ' : '' }}{{ r.weather.text }} <span class=\"mm-dim\">({{ r.weather.source === 'Vorhersage' ? 'Vorhersage ' + r.weather.from + '–' + r.weather.to : 'aktuelles Wetter, Vorhersage reicht noch nicht bis zur Abfahrt' }})</span></div>\n                    <div v-if=\"r.status !== 'warn' && r.alternatives.length\">\n                        ⚖ Zum Vergleich:<span v-for=\"(a, i) in r.alternatives\" :key=\"'c' + a.mode\">{{ i ? ' ·' : '' }} {{ a.mode === 'transit' ? '🚌' : '🚶' }} {{ a.label }} {{ a.min }} min</span>\n                    </div>\n                    <div v-if=\"r.plan\">\n                        🗓 <template v-if=\"r.plan.status === 'ok'\">Fahrplan: Bus {{ r.plan.line }} → {{ r.plan.headsign }} ab {{ r.plan.board.name }}\n                        {{ r.plan.boardAt ? 'um ' + r.plan.boardAt : 'alle ' + r.plan.headwayMin + ' min' }}, {{ r.plan.rideMin }} min bis {{ r.plan.alight.name }}\n                        <span class=\"mm-dim\">(Fußwege {{ r.plan.board.walkMin }} + {{ r.plan.alight.walkMin }} min)</span></template>\n                        <template v-else-if=\"r.plan.status === 'noservice'\">Fahrplan: zu dieser Zeit fährt kein direkter Bus</template>\n                        <template v-else>Fahrplan: keine direkte Buslinie <span class=\"mm-dim\">(mit Umsteigen evtl. möglich, ÖPNV geschätzt)</span></template>\n                    </div>\n                    <div v-if=\"r.bus\">\n                        🚏 {{ r.bus.stop }} ({{ r.bus.distM }} m):<span v-for=\"(b, i) in r.bus.next\" :key=\"'b' + i\">{{ i ? ',' : '' }} {{ b.line }} in {{ b.min }} min<span v-if=\"b.stop && b.stop !== r.bus.stop\" class=\"mm-dim\"> ({{ b.stop }})</span></span><span v-if=\"!r.bus.next.length\"> gerade keine Busse gemeldet</span>\n                        <span class=\"mm-dim\"> (EMT live{{ r.bus.used ? ', Bus ' + r.bus.used.line + ' erreichbar, ' + r.bus.used.wait + ' min warten' : '' }})</span>\n                    </div>\n                    <div v-for=\"(n, i) in r.notes\" :key=\"'n' + i\" class=\"mm-dim\">ℹ {{ n }}</div>\n                </div>\n\n                <div class=\"mm-foot\">\n                    <span>🕒 {{ r.departureText || 'keine Abfahrtszeit' }} · {{ countdown(r) }}</span>\n                    <span v-if=\"r.settings\" class=\"mm-dim\">Grenzen: {{ settingsText(r.settings) }}</span>\n                </div>\n            </div>\n        </div>\n    </div>\n</template>\n\n<script>\nexport default {\n    data () {\n        return { now: Date.now(), timer: null }\n    },\n    computed: {\n        routes () {\n            return (this.msg && this.msg.payload && this.msg.payload.routes) || []\n        }\n    },\n    methods: {\n        minutesLeft (r) {\n            return r.nextDeparture ? Math.round((Date.parse(r.nextDeparture) - this.now) / 60000) : null\n        },\n        active (r) {\n            const m = this.minutesLeft(r)\n            return m !== null && m >= 0 && m <= (r.windowMin || 30)\n        },\n        countdown (r) {\n            const m = this.minutesLeft(r)\n            if (m === null) return 'keine Fahrt in den nächsten 7 Tagen'\n            if (m <= 0) return 'Abfahrt jetzt'\n            if (m < 60) return 'Abfahrt in ' + m + ' min'\n            return 'nächste: ' + r.nextDepartureText\n        },\n        settingsText (s) {\n            const rain = { kein: 'kein Regen', leicht: 'leichter Regen ok', egal: 'Regen egal' }[s.rain] || s.rain\n            return rain + ', Wind bis ' + s.windMax + ' km/h, ' + s.tempMin + '–' + s.tempMax + ' °C'\n        }\n    },\n    mounted () {\n        // Countdown selbst weiterzählen (der Status kommt nur bei Änderungen neu)\n        this.timer = setInterval(() => { this.now = Date.now() }, 15000)\n    },\n    unmounted () {\n        clearInterval(this.timer)\n    }\n}\n</script>\n\n<style>\n.mm { width: 100%; }\n.mm-empty { color: #6b7280; padding: 8px 2px; }\n.mm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }\n.mm-rc { border: 1px solid #dde1e4; border-left: 7px solid #9ca3af; border-radius: 10px; padding: 14px 16px; background: #fff; display: flex; flex-direction: column; gap: 10px; }\n.mm-ok { border-left-color: #1f7a4d; }\n.mm-warn { border-left-color: #c2410c; }\n.mm-unbekannt { border-left-color: #9ca3af; }\n.mm-geplant { border-left-color: #94a3b8; background: #f8fafc; }\n.mm-geplant .mm-headline { color: #475569; font-size: 18px; }\n.mm-preview { color: #64748b; }\n.mm-head { display: flex; justify-content: space-between; gap: 8px; }\n.mm-name { font-weight: 700; font-size: 17px; color: #111827; }\n.mm-sub { font-size: 13px; color: #6b7280; }\n.mm-badges { display: flex; gap: 4px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }\n.mm-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }\n.mm-badge-on { background: #1f7a4d; color: #fff; }\n.mm-status { display: flex; align-items: baseline; gap: 10px; }\n.mm-headline { font-size: 22px; font-weight: 700; }\n.mm-ok .mm-headline { color: #1f7a4d; }\n.mm-warn .mm-headline { color: #c2410c; }\n.mm-unbekannt .mm-headline { color: #6b7280; }\n.mm-min { margin-left: auto; font-size: 20px; font-weight: 700; color: #111827; white-space: nowrap; }\n.mm-list { margin: 0; padding-left: 18px; font-size: 14px; }\n.mm-problems { color: #9a3412; }\n.mm-hints { color: #6b4e00; }\n.mm-alts { font-size: 14px; background: #fff4ec; color: #7c2d12; border-radius: 6px; padding: 6px 10px; }\n.mm-facts { font-size: 13.5px; color: #374151; display: flex; flex-direction: column; gap: 3px; }\n.mm-dim { color: #9ca3af; }\n.mm-foot { font-size: 13px; color: #374151; border-top: 1px solid #eef0f2; padding-top: 8px; display: flex; flex-direction: column; gap: 2px; }\n</style>\n",
     "storeOutMessages": true,
     "passthru": false,
     "resendOnRefresh": true,
@@ -854,7 +823,7 @@
     "id": "969ebbd97eb65c0e",
     "type": "comment",
     "z": "cf931b46039477f7",
-    "name": "Seite \"Routen & Einstellungen\": Start-/Zielstation, Abfahrt, persönliche Grenzen",
+    "name": "Seite \"Routen verwalten\": Start-/Zielstation, Abfahrt, persönliche Grenzen",
     "info": "Jedes Feld sendet mit eigenem msg.topic an **Formular**. Beim Anlegen werden Start- und Zieladresse nacheinander per Nominatim (OpenStreetMap) in Koordinaten umgewandelt (max. 1 Anfrage pro Sekunde), dann wird die Route retained veröffentlicht.",
     "x": 260,
     "y": 240,
@@ -1253,7 +1222,7 @@
     "id": "c0bb66e34aebe6ae",
     "type": "function",
     "name": "Wettertext",
-    "func": "// .../live/weather -> Textzeile: aktuelles Wetter + Regen in der Vorhersage (nächste 2 h)\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst hm = ms => new Date(ms).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst rain = (w.forecast || []).filter(f => f.t <= Date.now() + 2 * 3600000 && f.precip >= 0.1);\nconst fc = !(w.forecast || []).length ? '' : rain.length ? ' · Regen erwartet ab ' + hm(rain[0].t) : ' · nächste 2 h trocken';\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm · Wind ' + w.wind + ' km/h' + fc +\n    ' · Stand ' + hm(w.ts) + (w.demo ? ' (Simulation)' : '') };\n",
+    "func": "// .../live/weather -> Textzeile: aktuelles Wetter + Regen in der Vorhersage (nächste 2 h)\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst hm = ms => new Date(ms).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst rain = (w.forecast || []).filter(f => f.t <= Date.now() + 2 * 3600000 && f.precip >= 0.1);\nconst fc = !(w.forecast || []).length ? '' : rain.length ? ' · Regen erwartet ab ' + hm(rain[0].t) : ' · nächste 2 h trocken';\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm · Wind ' + w.wind + ' km/h' + fc +\n    ' · Stand ' + hm(w.ts) };\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -1297,7 +1266,7 @@
     "id": "e9a5bb38b5fe76e2",
     "type": "function",
     "name": "Demo",
-    "func": "// Demo (Seite \"System & Demo\"):\n// - Demo-Route: eine Route \"Zur Uni\" (Sol -> Ciudad Universitaria) für den Nutzer \"demo\",\n//   Abfahrt in 14 min (also sofort \"aktiv\"). Die Einstellungen von \"demo\" werden auf die\n//   Standardwerte zurückgesetzt, damit jede Probe gleich startet.\n//   Die Stationen werden über die Lage gesucht, damit es mit echten und simulierten Daten klappt.\n// - Demo-Ablauf / Beenden: Kommando an den Simulator über .../sim/cmd (QoS 1, nicht retained).\n//   Beim Start wird die Demo-Route neu angelegt (Abfahrt wieder in 14 min), sonst kämen\n//   bei einer zweiten Vorführung keine Meldungen mehr (Abfahrt vorbei).\n// Ausgang 1: MQTT   Ausgang 2: Hinweis im Feld \"Simulation\"\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nif (['sim:demo', 'sim:stop', 'demoroutes'].indexOf(msg.topic) < 0) return null;\nconst cmd = sc => ({ topic: P + '/sim/cmd', payload: { scenario: sc, by: 'dashboard' }, qos: 1, retain: false });\nif (msg.topic === 'sim:stop') return [[cmd('stop')], { payload: 'Simulation wird beendet …' }];\nconst stations = flow.get('stations') || [];\nif (!stations.length) {\n    const t = '⚠ Noch keine Stationsliste. Läuft collector.py (Fenster offen, „verbunden“)? Ohne Internet nutzt er stations_cache.json.';\n    node.warn(t);\n    return [null, { payload: t }];\n}\nconst dist = (a, b) => Math.hypot((a.lon - b.lon) * 85000, (a.lat - b.lat) * 111000);\nconst near = (lat, lon) => stations.slice().sort((a, b) => dist(a, { lat, lon }) - dist(b, { lat, lon }))[0];\nconst parts = {};\nnew Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false })\n    .formatToParts(new Date(Date.now() + 14 * 60000)).forEach(p => { parts[p.type] = p.value; });\nconst time = String(Number(parts.hour) % 24).padStart(2, '0') + ':' + parts.minute;\nconst mk = (id, name, a, b) => ({\n    topic: P + '/routes/demo/' + id, qos: 1, retain: true,\n    payload: { name: name, from: { id: a.id, label: a.name }, to: { id: b.id, label: b.name },\n        departure: { time: time, days: [1, 2, 3, 4, 5, 6, 7] }, createdAt: new Date().toISOString() }\n});\nconst out = [\n    { topic: P + '/users/demo/settings', payload: cfg.reco.defaultSettings, qos: 1, retain: true },\n    { topic: P + '/routes/demo/zum-bahnhof', payload: '', qos: 1, retain: true },          // alte Demo-Route entfernen\n    mk('zur-uni', 'Zur Uni', near(40.4169, -3.7035), near(40.4437, -3.7276))              // Sol -> Ciudad Universitaria\n];\nif (msg.topic === 'sim:demo') {\n    out.push(cmd('demo'));\n    return [out, { payload: 'Demo startet: Route „Zur Uni“ (Abfahrt ' + time + ') – Ablauf unter „Meine Routen“ ansehen.' }];\n}\nreturn [out, { payload: 'Demo-Route „Zur Uni“ angelegt, Abfahrt ' + time + ' (in 14 min).' }];\n",
+    "func": "// Demo-Route (Seite \"System & Demo\"): eine echte Route \"Zur Uni\" (Sol -> Ciudad Universitaria)\n// für den Nutzer \"demo\", Abfahrt in 14 min (also sofort im Zeitfenster für Meldungen).\n// Die Einstellungen von \"demo\" werden auf die Standardwerte zurückgesetzt, damit jede Probe gleich startet.\n// Die Stationen werden über die Lage gesucht (nächste BiciMAD-Station zu Sol bzw. Ciudad Universitaria).\n// Ausgang 1: MQTT   Ausgang 2: Hinweis im Feld \"Status Demo-Route\"\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nif (msg.topic !== 'demoroutes') return null;\nconst stations = flow.get('stations') || [];\nif (!stations.length) {\n    const t = '⚠ Noch keine Stationsliste. Läuft collector.py (Fenster offen, „verbunden“)? Ohne Internet nutzt er stations_cache.json.';\n    node.warn(t);\n    return [null, { payload: t }];\n}\nconst dist = (a, b) => Math.hypot((a.lon - b.lon) * 85000, (a.lat - b.lat) * 111000);\nconst near = (lat, lon) => stations.slice().sort((a, b) => dist(a, { lat, lon }) - dist(b, { lat, lon }))[0];\nconst parts = {};\nnew Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false })\n    .formatToParts(new Date(Date.now() + 14 * 60000)).forEach(p => { parts[p.type] = p.value; });\nconst time = String(Number(parts.hour) % 24).padStart(2, '0') + ':' + parts.minute;\nconst a = near(40.4169, -3.7035), b = near(40.4437, -3.7276);          // Sol -> Ciudad Universitaria\nconst out = [\n    { topic: P + '/users/demo/settings', payload: cfg.reco.defaultSettings, qos: 1, retain: true },\n    { topic: P + '/routes/demo/zur-uni', qos: 1, retain: true,\n      payload: { name: 'Zur Uni', from: { id: a.id, label: a.name }, to: { id: b.id, label: b.name },\n          departure: { time: time, days: [1, 2, 3, 4, 5, 6, 7] }, createdAt: new Date().toISOString() } }\n];\nreturn [out, { payload: 'Demo-Route „Zur Uni“ angelegt (' + a.name + ' → ' + b.name + '), Abfahrt ' + time + ' (in 14 min).' }];\n",
     "outputs": 2,
     "timeout": 0,
     "noerr": 0,
@@ -1353,45 +1322,6 @@
     "className": "",
     "x": 760,
     "y": 720,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "5225e8208190205d",
-    "type": "ui-button",
-    "name": "Simulation beenden",
-    "label": "Simulation beenden",
-    "tooltip": "",
-    "emulateClick": false,
-    "color": "",
-    "bgcolor": "",
-    "icon": "stop",
-    "iconPosition": "left",
-    "payload": "",
-    "payloadType": "str",
-    "topic": "sim:stop",
-    "topicType": "str",
-    "buttonColor": "",
-    "textColor": "",
-    "iconColor": "",
-    "enableClick": true,
-    "enablePointerdown": false,
-    "pointerdownPayload": "",
-    "pointerdownPayloadType": "str",
-    "enablePointerup": false,
-    "pointerupPayload": "",
-    "pointerupPayloadType": "str",
-    "wires": [
-      [
-        "e9a5bb38b5fe76e2"
-      ]
-    ],
-    "group": "6d5459b008feb016",
-    "order": 3,
-    "width": "6",
-    "height": "1",
-    "className": "",
-    "x": 760,
-    "y": 1000,
     "z": "cf931b46039477f7"
   },
   {
@@ -1510,7 +1440,7 @@
   {
     "id": "6d17725ddcd9ce96",
     "type": "ui-page",
-    "name": "Übersicht",
+    "name": "Routenübersicht",
     "ui": "85facd4bcc49a099",
     "path": "/empfehlungen",
     "icon": "bike",
@@ -1544,9 +1474,45 @@
     "disabled": "false"
   },
   {
+    "id": "mm7pagestat00001",
+    "type": "ui-page",
+    "name": "Statistik",
+    "ui": "85facd4bcc49a099",
+    "path": "/statistik",
+    "icon": "chart-line",
+    "layout": "grid",
+    "theme": "7fb82c2635e3b5bd",
+    "breakpoints": [
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
+    ],
+    "order": 2,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
     "id": "494ef9dd12244e66",
     "type": "ui-page",
-    "name": "Routen & Einstellungen",
+    "name": "Routen verwalten",
     "ui": "85facd4bcc49a099",
     "path": "/routen",
     "icon": "map-marker-path",
@@ -1574,7 +1540,7 @@
         "cols": 12
       }
     ],
-    "order": 2,
+    "order": 3,
     "className": "",
     "visible": "true",
     "disabled": "false"
@@ -1610,7 +1576,7 @@
         "cols": 12
       }
     ],
-    "order": 3,
+    "order": 4,
     "className": "",
     "visible": "true",
     "disabled": "false"
@@ -1620,7 +1586,7 @@
     "type": "ui-group",
     "name": "Empfehlung: Rad, Bus oder zu Fuß?",
     "page": "6d17725ddcd9ce96",
-    "width": "7",
+    "width": "12",
     "height": "1",
     "order": 1,
     "showTitle": true,
@@ -1921,48 +1887,9 @@
     ]
   },
   {
-    "id": "d02d7f0257c0d1e2",
-    "type": "ui-button",
-    "name": "Demo-Ablauf starten (ca. 3 min)",
-    "label": "Demo-Ablauf starten (ca. 3 min)",
-    "tooltip": "",
-    "emulateClick": false,
-    "color": "",
-    "bgcolor": "",
-    "icon": "play",
-    "iconPosition": "left",
-    "payload": "",
-    "payloadType": "str",
-    "topic": "sim:demo",
-    "topicType": "str",
-    "buttonColor": "",
-    "textColor": "",
-    "iconColor": "",
-    "enableClick": true,
-    "enablePointerdown": false,
-    "pointerdownPayload": "",
-    "pointerdownPayloadType": "str",
-    "enablePointerup": false,
-    "pointerupPayload": "",
-    "pointerupPayloadType": "str",
-    "wires": [
-      [
-        "e9a5bb38b5fe76e2"
-      ]
-    ],
-    "group": "6d5459b008feb016",
-    "order": 2,
-    "width": "6",
-    "height": "1",
-    "className": "",
-    "x": 760,
-    "y": 760,
-    "z": "cf931b46039477f7"
-  },
-  {
     "id": "8dcacaebc1ed0b73",
     "type": "ui-text",
-    "name": "Simulation",
+    "name": "Status Demo-Route",
     "label": "",
     "format": "{{msg.payload}}",
     "layout": "row-left",
@@ -1975,54 +1902,13 @@
     "valueType": "msg",
     "wires": [],
     "group": "6d5459b008feb016",
-    "order": 4,
+    "order": 2,
     "width": "6",
     "height": "0",
     "className": "",
     "x": 1300,
     "y": 1060,
     "z": "cf931b46039477f7"
-  },
-  {
-    "id": "08794a3b9693d029",
-    "type": "mqtt in",
-    "z": "cf931b46039477f7",
-    "name": "Simulationsstatus",
-    "topic": "upm-dsiot-g6/move/sim/state",
-    "qos": "1",
-    "datatype": "auto-detect",
-    "broker": "371a175cdaa0c57c",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 760,
-    "y": 1060,
-    "wires": [
-      [
-        "c3dab4d5f775b4c9"
-      ]
-    ]
-  },
-  {
-    "id": "c3dab4d5f775b4c9",
-    "type": "function",
-    "z": "cf931b46039477f7",
-    "name": "Simulationsstatus",
-    "func": "// .../sim/state (retained) -> Textzeile auf der Seite \"System & Demo\"\nconst s = msg.payload;\nif (!s || typeof s !== 'object' || !s.active) return { payload: 'Keine Simulation aktiv: es laufen echte Daten.' };\nconst since = new Date(s.startedAt).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nreturn { payload: '▶ ' + s.label + ' (seit ' + since + ')' + (s.phase ? ' · ' + s.phase : '') +\n    (s.stations ? ' · ' + s.stations + ' Stationen simuliert' : '') };\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 1020,
-    "y": 1060,
-    "wires": [
-      [
-        "8dcacaebc1ed0b73"
-      ]
-    ]
   },
   {
     "id": "deb7ecba2f37046a",
@@ -2302,245 +2188,6 @@
     ]
   },
   {
-    "id": "6a57b52bbdd3da5b",
-    "type": "tab",
-    "label": "Simulation",
-    "disabled": false,
-    "info": "Simulator für die Vorführung: ein Demo-Ablauf (ca. 3 min). Eigener Dienst mit eigener Broker-Verbindung (g6-sim). Gesteuert über …/sim/cmd, Zustand auf …/sim/state (retained)."
-  },
-  {
-    "id": "a96c392f0bd185a3",
-    "type": "comment",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Was der Simulator wissen muss (alles retained über MQTT)",
-    "info": "",
-    "x": 200,
-    "y": 40,
-    "wires": []
-  },
-  {
-    "id": "a991ca8d620d1629",
-    "type": "mqtt in",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Stationsliste",
-    "topic": "upm-dsiot-g6/move/static/stations",
-    "qos": "1",
-    "datatype": "auto-detect",
-    "broker": "840ea2d3a1cf5304",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 130,
-    "y": 80,
-    "wires": [
-      [
-        "22c54482ca762aa3"
-      ]
-    ]
-  },
-  {
-    "id": "783d02dcb12492fa",
-    "type": "mqtt in",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Profile",
-    "topic": "upm-dsiot-g6/move/profiles/+/+",
-    "qos": "1",
-    "datatype": "auto-detect",
-    "broker": "840ea2d3a1cf5304",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 120,
-    "y": 120,
-    "wires": [
-      [
-        "22c54482ca762aa3"
-      ]
-    ]
-  },
-  {
-    "id": "c159436f25985e59",
-    "type": "mqtt in",
-    "z": "6a57b52bbdd3da5b",
-    "name": "echte Stationswerte",
-    "topic": "upm-dsiot-g6/move/live/bicimad/+",
-    "qos": "0",
-    "datatype": "auto-detect",
-    "broker": "840ea2d3a1cf5304",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 140,
-    "y": 160,
-    "wires": [
-      [
-        "22c54482ca762aa3"
-      ]
-    ]
-  },
-  {
-    "id": "22c54482ca762aa3",
-    "type": "function",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Daten merken",
-    "func": "// Merkt sich, was der Simulator braucht (alles über MQTT, retained):\n//   .../static/stations    Stationsliste (Lage, Kapazität)\n//   .../profiles/+/+       Routen -> Start- und Zielstation\n//   .../live/bicimad/+     echte Werte als Ausgangspunkt der Simulation\n// Eigene simulierte Nachrichten (sim: ...) werden ignoriert.\nconst t = msg.topic || '';\nconst p = msg.payload;\nconst empty = p === '' || p == null || (Buffer.isBuffer(p) && p.length === 0);\nif (t.endsWith('/static/stations')) {\n    const map = {};\n    (Array.isArray(p) ? p : []).forEach(s => { map[s.id] = s; });\n    flow.set('stations', map);\n} else if (t.indexOf('/profiles/') >= 0) {\n    const key = t.split('/').slice(-2).join('/');\n    const routes = flow.get('routes') || {};\n    if (empty || typeof p !== 'object') delete routes[key];\n    else routes[key] = { from: p.from.id, to: p.to.id };\n    flow.set('routes', routes);\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (empty || typeof p !== 'object' || p.sim || p.demo) return null;\n    const real = flow.get('realBikes') || {};\n    real[t.split('/').pop()] = { bikes: p.bikes, docks: p.docks };\n    flow.set('realBikes', real);\n}\nconst n = Object.keys(flow.get('stations') || {}).length;\nnode.status({ fill: n ? 'green' : 'yellow', shape: 'dot',\n    text: n + ' Stationen, ' + Object.keys(flow.get('routes') || {}).length + ' Routen bekannt' });\nreturn null;\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 380,
-    "y": 140,
-    "wires": []
-  },
-  {
-    "id": "2c54c303e837ba17",
-    "type": "comment",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Demo-Ablauf: Kommando → Simulator → dieselben Topics wie der Collector",
-    "info": "",
-    "x": 260,
-    "y": 260,
-    "wires": []
-  },
-  {
-    "id": "07aa6a205c0265a4",
-    "type": "mqtt in",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Kommando",
-    "topic": "upm-dsiot-g6/move/sim/cmd",
-    "qos": "1",
-    "datatype": "auto-detect",
-    "broker": "840ea2d3a1cf5304",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 120,
-    "y": 300,
-    "wires": [
-      [
-        "929f99dee242f89e"
-      ]
-    ]
-  },
-  {
-    "id": "c92659f1e050154d",
-    "type": "inject",
-    "z": "6a57b52bbdd3da5b",
-    "name": "alle 5 s",
-    "props": [
-      {
-        "p": "topic",
-        "vt": "str"
-      }
-    ],
-    "repeat": "5",
-    "crontab": "",
-    "once": true,
-    "onceDelay": 3,
-    "topic": "tick",
-    "x": 120,
-    "y": 340,
-    "wires": [
-      [
-        "929f99dee242f89e"
-      ]
-    ]
-  },
-  {
-    "id": "929f99dee242f89e",
-    "type": "function",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Simulator",
-    "func": "// ============================================================\n//  Simulator für die Vorführung: ein fester Demo-Ablauf (ca. 3 min).\n//  Eigener Dienst mit eigener Broker-Verbindung (g6-sim). Er veröffentlicht auf\n//  DENSELBEN Topics wie der Python-Collector (.../live/bicimad/<id>, .../live/weather).\n//  Empfehlungsdienst und Dashboard merken keinen Unterschied: Entkopplung über MQTT.\n//\n//  Steuerung: .../sim/cmd {scenario: 'demo' | 'stop'}\n//  Zustand:   .../sim/state (retained) -> der Collector pausiert solange seine Live-Werte.\n//  Simuliert werden Start- und Zielstationen aller Routen und ihre 4 nächsten Nachbarn.\n//\n//  Ablauf:   0 s  alles gut\n//           20 s  Startstationen fast leer (1 Rad), Nachbarn haben Räder -> nur Hinweis\n//           60 s  Vorhersage: Regen während der Fahrt -> Warnung\n//          120 s  Regen vorbei, Lieferwagen bringt Räder -> Entwarnung\n//          160 s  Ende\n//          175 s  Simulation endet von selbst: Collector sendet wieder echte Werte\n// ============================================================\nconst cfg = global.get('cfg');\nconst P = cfg.prefix;\nlet sim = context.get('sim') || { active: false };\nconst out = [];\n\nconst PHASES = [[0, '1/4 alles gut'], [20, '2/4 Startstationen fast leer, Ausweichstation in der Nähe'],\n    [60, '3/4 Regen in der Vorhersage'], [120, '4/4 Regen vorbei, Räder aufgefüllt'], [160, 'Ende – gleich wieder echte Daten']];\nconst END_S = 175;\nconst startTarget = t => t < 20 ? null : t < 120 ? 1 : 10;            // Räder an den Startstationen\nconst rainForecast = t => t >= 60 && t < 120;                          // Regen in der Vorhersage?\n\n// Zufall mit festem Startwert: jeder Lauf sieht gleich aus\nfunction rnd() {\n    let a = (sim.seed = (sim.seed + 0x6D2B79F5) | 0);\n    a = Math.imul(a ^ (a >>> 15), a | 1);\n    a ^= a + Math.imul(a ^ (a >>> 7), a | 61);\n    return ((a ^ (a >>> 14)) >>> 0) / 4294967296;\n}\nconst dist = (a, b) => Math.hypot((a.lon - b.lon) * 85000, (a.lat - b.lat) * 111000);\n// Simulation beenden: Zustand \"inaktiv\" melden, Collector soll sofort wieder echte Werte senden\nfunction stopSim(why) {\n    sim = { active: false };\n    context.set('sim', sim);\n    node.status({ fill: 'grey', shape: 'ring', text: why + ' ' + new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid' }) });\n    return [state(),\n        { topic: P + '/cmd/bicimad/refresh', payload: 'refresh', qos: 1, retain: false },\n        { topic: P + '/cmd/weather/refresh', payload: 'refresh', qos: 1, retain: false }];\n}\nconst state = () => ({ topic: P + '/sim/state', qos: 1, retain: true,\n    payload: { active: sim.active, label: sim.active ? 'Demo-Ablauf' : null, phase: sim.phase || null,\n        startedAt: sim.startedAt || null } });\n\n// ---------- Kommando ----------\nconst isCmd = msg.topic && msg.topic.endsWith('/sim/cmd');\nif (isCmd) {\n    const sc = msg.payload && msg.payload.scenario;\n    if (sc === 'stop') {\n        if (!sim.active) return [[state()]];      // trotzdem melden (z. B. alter retained Zustand)\n        return [stopSim('gestoppt')];\n    }\n    if (sc !== 'demo') { node.warn('Unbekanntes Szenario: ' + sc); return null; }\n    sim = { active: true, startedAt: Date.now(), seed: 20261120, st: {}, phase: null, lastFull: 0 };\n}\n\n// Nach einem Neustart einmal den Zustand melden (ein alter retained \"aktiv\" würde den\n// Collector sonst dauerhaft pausieren) und jede Minute \"online\" bestätigen (Heartbeat).\nif (!context.get('announced')) { context.set('announced', true); if (!sim.active) out.push(state()); }\nif (Date.now() - (context.get('beat') || 0) > 60000) {\n    context.set('beat', Date.now());\n    out.push({ topic: P + '/system/sim', payload: 'online', qos: 1, retain: true });\n}\nif (!sim.active) { context.set('sim', sim); return out.length ? [out] : null; }\n\n// ---------- Schritt (alle 5 s) ----------\nconst t = (Date.now() - sim.startedAt) / 1000;\nif (t >= END_S) return [out.concat(stopSim('beendet'))];\nconst stations = flow.get('stations') || {};\nconst routes = flow.get('routes') || {};\nconst real = flow.get('realBikes') || {};\nconst list = Object.values(stations);\nconst ids = {}, starts = {};\nfor (const r of Object.values(routes)) {\n    for (const id of [r.from, r.to]) {\n        const s = stations[id];\n        if (!s) continue;\n        ids[id] = true;\n        list.map(o => ({ id: o.id, d: dist(s, o) })).sort((a, b) => a.d - b.d).slice(1, 5).forEach(o => { ids[o.id] = true; });\n    }\n    starts[r.from] = true;\n}\nconst full = Date.now() - sim.lastFull > 60000;     // jede Minute alles neu (frische Zeitstempel)\nif (full) sim.lastFull = Date.now();\nconst target = startTarget(t);\nfor (const id of Object.keys(ids)) {\n    const cap = stations[id].capacity || 20;\n    let s = sim.st[id];\n    if (!s) {\n        const b = real[id] ? real[id].bikes : Math.round(cap * (0.35 + 0.3 * rnd()));\n        s = sim.st[id] = { bikes: Math.max(starts[id] ? 6 : 4, b), sent: false };\n    }\n    const before = s.bikes;\n    if (starts[id] && target !== null) s.bikes += Math.max(-3, Math.min(3, target - s.bikes));\n    else if (rnd() < 0.3) s.bikes = Math.max(starts[id] ? 6 : 4, s.bikes + (rnd() < 0.5 ? -1 : 1));  // normaler Betrieb\n    s.bikes = Math.max(0, Math.min(cap, s.bikes));\n    if (s.bikes !== before || !s.sent || full) {\n        s.sent = true;\n        out.push({ topic: P + '/live/bicimad/' + id, qos: 0, retain: true,\n            payload: { bikes: s.bikes, docks: cap - s.bikes, renting: true, returning: true, ts: Date.now(), demo: true } });\n    }\n}\n\n// Wetter: aktuell trocken; in Phase 3 Regen in der Vorhersage (ab der nächsten Viertelstunde)\nconst rain = rainForecast(t);\nif (rain !== sim.rain || full || isCmd) {\n    sim.rain = rain;\n    const q = 15 * 60000, t0 = Math.floor(Date.now() / q) * q;\n    const forecast = [];\n    for (let i = 0; i < 16; i++) {\n        forecast.push({ t: t0 + i * q, temp: 15, wind: 10, precip: rain && i >= 1 ? 0.6 : 0 });\n    }\n    out.push({ topic: P + '/live/weather', qos: 0, retain: true,\n        payload: { temp: 15, precip: 0, wind: 10, code: rain ? 3 : 1, ts: Date.now(), forecast: forecast,\n            source: 'simulation', demo: true } });\n}\n\nconst ph = PHASES.filter(p => p[0] <= t).pop()[1];\nif (ph !== sim.phase) { sim.phase = ph; out.push(state()); }\ncontext.set('sim', sim);\nnode.status({ fill: 'blue', shape: 'dot', text: ph + ' (' + Math.round(t) + ' s, ' + Object.keys(ids).length + ' Stationen)' });\nreturn out.length ? [out] : null;\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 340,
-    "y": 320,
-    "wires": [
-      [
-        "f3eb77f0934280fc",
-        "f22b4fcfec2bf87a"
-      ]
-    ]
-  },
-  {
-    "id": "f3eb77f0934280fc",
-    "type": "mqtt out",
-    "z": "6a57b52bbdd3da5b",
-    "name": "g6-sim",
-    "topic": "",
-    "qos": "",
-    "retain": "",
-    "respTopic": "",
-    "contentType": "",
-    "userProps": "",
-    "correl": "",
-    "expiry": "",
-    "broker": "840ea2d3a1cf5304",
-    "x": 540,
-    "y": 300,
-    "wires": []
-  },
-  {
-    "id": "f22b4fcfec2bf87a",
-    "type": "debug",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Simulierte Nachrichten",
-    "active": false,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "false",
-    "targetType": "msg",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 590,
-    "y": 340,
-    "wires": []
-  },
-  {
-    "id": "30b3d7749cf7e071",
-    "type": "debug",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Fehler",
-    "active": true,
-    "tosidebar": true,
-    "console": false,
-    "tostatus": false,
-    "complete": "true",
-    "targetType": "full",
-    "statusVal": "",
-    "statusType": "auto",
-    "x": 330,
-    "y": 420,
-    "wires": []
-  },
-  {
-    "id": "1b11dc45b2029a9c",
-    "type": "catch",
-    "z": "6a57b52bbdd3da5b",
-    "name": "Fehler im Tab",
-    "scope": null,
-    "uncaught": false,
-    "x": 130,
-    "y": 420,
-    "wires": [
-      [
-        "30b3d7749cf7e071"
-      ]
-    ]
-  },
-  {
     "id": "mm7emtin00000001",
     "type": "mqtt in",
     "name": "EMT-Busse",
@@ -2586,10 +2233,10 @@
     "id": "mm7grpkpi0000001",
     "type": "ui-group",
     "name": "Madrid jetzt",
-    "page": "6d17725ddcd9ce96",
-    "width": "5",
+    "page": "mm7pagestat00001",
+    "width": "12",
     "height": "1",
-    "order": 2,
+    "order": 1,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -2600,10 +2247,10 @@
     "id": "mm7grpwave000001",
     "type": "ui-group",
     "name": "Pendlerwelle: Füllgrad im Zentrum und am Stadtrand (24 h)",
-    "page": "6d17725ddcd9ce96",
+    "page": "mm7pagestat00001",
     "width": "12",
     "height": "1",
-    "order": 3,
+    "order": 2,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -2614,10 +2261,10 @@
     "id": "mm7grpspat000001",
     "type": "ui-group",
     "name": "Zentrum gegen Stadtrand: Füllgrad nach Entfernung zur Puerta del Sol",
-    "page": "6d17725ddcd9ce96",
+    "page": "mm7pagestat00001",
     "width": "6",
     "height": "1",
-    "order": 4,
+    "order": 3,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -2628,10 +2275,10 @@
     "id": "mm7grpuse0000001",
     "type": "ui-group",
     "name": "Wetter und Radnutzung",
-    "page": "6d17725ddcd9ce96",
+    "page": "mm7pagestat00001",
     "width": "6",
     "height": "1",
-    "order": 5,
+    "order": 4,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -2668,7 +2315,7 @@
     "type": "comment",
     "z": "mm7tabstats00001",
     "name": "Statistik-Dienst: Live-Daten -> Kennzahlen (retained auf .../stats/...)",
-    "info": "Zählt jede Minute die freien Räder, den Füllgrad im Zentrum und am Stadtrand und die Radbewegungen.\nDaten aus der Simulation (demo: true) werden ignoriert.\n\n- .../stats/now: aktuelle Kennzahlen\n- .../stats/spatial: Entfernung zur Puerta del Sol und Füllgrad je Station\n- .../stats/history: Verlauf (retained, wird nach einem Neustart wieder übernommen)",
+    "info": "Zählt jede Minute die freien Räder, den Füllgrad im Zentrum und am Stadtrand und die Radbewegungen.\n\n- .../stats/now: aktuelle Kennzahlen\n- .../stats/spatial: Entfernung zur Puerta del Sol und Füllgrad je Station\n- .../stats/history: Verlauf (retained, wird nach einem Neustart wieder übernommen)",
     "x": 300,
     "y": 60,
     "wires": []
@@ -2678,7 +2325,7 @@
     "type": "function",
     "z": "mm7tabstats00001",
     "name": "Kennzahlen berechnen",
-    "func": "// ============================================================\n//  Statistik-Dienst: Kennzahlen für die Diagramme im Dashboard\n//  Eingänge (Wildcard-Abos):\n//    .../static/stations      Lage und Kapazität der Stationen\n//    .../live/bicimad/+       Räder/Plätze je Station (nur echte Daten, keine Simulation)\n//    .../live/weather         aktuelles Wetter\n//    .../stats/history        eigener Verlauf (retained) -> wird nach einem Neustart übernommen\n//    Takt jede Minute\n//  Ausgänge (retained):\n//    .../stats/now            aktuelle Kennzahlen (Räder frei, leere/volle Stationen, Bewegungen)\n//    .../stats/spatial        je Station: Entfernung zur Puerta del Sol und Füllgrad\n//    .../stats/history        Verlauf: Pendlerwelle (alle 5 min) und Wetter/Nutzung (alle 10 min)\n//\n//  Füllgrad einer Station = Räder / (Räder + freie Plätze)\n//  Radbewegungen = Summe aller Änderungen der Räderzahl (Ausleihen + Rückgaben)\n// ============================================================\nconst cfg = global.get('cfg');\nconst P = cfg.prefix, S = cfg.stats;\nlet st = context.get('st');\nif (!st || st.prefix !== P) {\n    st = { prefix: P, stations: {}, bikes: {}, moves: 0, weather: null, restored: false,\n        hist: { wave: [], use: [] }, lastWave: 0, lastUse: Date.now(), lastSpatial: '' };\n}\nconst t = msg.topic || '';\nconst p = msg.payload;\nconst empty = p === '' || p == null || (Buffer.isBuffer(p) && p.length === 0);\nconst out = [];\n\n// Entfernung in km (Näherung, für Stadtentfernungen ausreichend)\nconst distKm = (a, b) => Math.hypot((a.lon - b.lon) * 111.32 * Math.cos(a.lat * Math.PI / 180), (a.lat - b.lat) * 110.54);\n\nif (t.endsWith('/static/stations') && Array.isArray(p)) {\n    st.stations = {};\n    for (const s of p) {\n        const d = distKm(s, S.center);\n        st.stations[s.id] = { distKm: Math.round(d * 100) / 100, zone: d <= S.centerRadiusKm ? 'Zentrum' : 'Stadtrand' };\n    }\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (empty || typeof p !== 'object' || p.demo || p.sim) return null;      // Simulation nicht mitzählen\n    const id = t.split('/').pop();\n    const prev = st.bikes[id];\n    // retain=true = vom Broker nachgeliefert (Startzustand), keine echte Bewegung\n    if (prev && !msg.retain) st.moves += Math.abs((p.bikes || 0) - prev.bikes);\n    st.bikes[id] = { bikes: p.bikes || 0, docks: p.docks || 0, ts: p.ts || Date.now() };\n} else if (t.endsWith('/live/weather')) {\n    if (empty || typeof p !== 'object' || p.demo) return null;\n    st.weather = { temp: p.temp, precip: p.precip, wind: p.wind, ts: p.ts };\n} else if (t.endsWith('/stats/history')) {\n    // Nur einmal nach dem Start: gespeicherten Verlauf übernehmen (danach sind es unsere eigenen Nachrichten)\n    if (!st.restored && !empty && typeof p === 'object') {\n        st.hist = { wave: Array.isArray(p.wave) ? p.wave : [], use: Array.isArray(p.use) ? p.use : [] };\n        const lw = st.hist.wave[st.hist.wave.length - 1];\n        if (lw) st.lastWave = lw.t;\n        node.warn('Verlauf übernommen: ' + st.hist.wave.length + ' Punkte Pendlerwelle, ' + st.hist.use.length + ' Punkte Wetter/Nutzung');\n    }\n    st.restored = true;\n    context.set('st', st);\n    return null;\n}\n\n// ---------- Auswertung nur im Takt (jede Minute) ----------\nif (t !== 'tick') { context.set('st', st); return null; }\nst.restored = true;                        // spätestens jetzt: kein späteres Überschreiben mehr\nconst now = Date.now();\n\n// aktuelle Lage: nur Stationen mit frischen Daten\nconst fresh = Object.keys(st.bikes).filter(id => st.stations[id] && now - st.bikes[id].ts < S.freshMin * 60000);\nconst zone = { Zentrum: { b: 0, slots: 0 }, Stadtrand: { b: 0, slots: 0 } };\nlet total = 0, emptySt = 0, fullSt = 0;\nconst points = [];\nfor (const id of fresh) {\n    const b = st.bikes[id], s = st.stations[id];\n    const slots = b.bikes + b.docks;\n    total += b.bikes;\n    if (b.bikes === 0) emptySt++;\n    if (b.docks === 0) fullSt++;\n    if (slots > 0) {\n        zone[s.zone].b += b.bikes; zone[s.zone].slots += slots;\n        points.push([s.distKm, Math.round(b.bikes / slots * 100)]);\n    }\n}\nconst pct = z => z.slots ? Math.round(z.b / z.slots * 1000) / 10 : null;\nif (!fresh.length) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'keine frischen BiciMAD-Daten (läuft collector.py?)' });\n    context.set('st', st);\n    return null;\n}\n\n// Zentrum gegen Stadtrand (Momentaufnahme, nur senden wenn sich etwas geändert hat)\nconst sig = JSON.stringify(points);\nif (sig !== st.lastSpatial) {\n    st.lastSpatial = sig;\n    out.push({ topic: P + '/stats/spatial', qos: 0, retain: true,\n        payload: { points: points, centerRadiusKm: S.centerRadiusKm, ts: now } });\n}\n\nlet histChanged = false;\n// Pendlerwelle: alle S.waveEveryMin Minuten ein Punkt\nif (now - st.lastWave >= S.waveEveryMin * 60000 - 5000) {\n    st.lastWave = now;\n    st.hist.wave.push({ t: now, center: pct(zone.Zentrum), edge: pct(zone.Stadtrand), total: total });\n    st.hist.wave = st.hist.wave.filter(w => now - w.t <= S.waveKeepH * 3600000);\n    histChanged = true;\n}\n// Wetter und Radnutzung: alle S.useEveryMin Minuten ein Punkt (Bewegungen im Intervall + Wetter)\nconst movesNow = st.moves;\nif (now - st.lastUse >= S.useEveryMin * 60000 - 5000) {\n    const w = st.weather && now - st.weather.ts < 30 * 60000 ? st.weather : null;\n    if (w) st.hist.use.push({ t: now, moves: st.moves, temp: w.temp, precip: w.precip, wind: w.wind });\n    st.hist.use = st.hist.use.filter(u => now - u.t <= S.useKeepD * 86400000);\n    st.moves = 0;\n    st.lastUse = now;\n    histChanged = true;\n}\nif (histChanged) out.push({ topic: P + '/stats/history', qos: 1, retain: true, payload: st.hist });\n\nout.push({ topic: P + '/stats/now', qos: 0, retain: true, payload: {\n    stations: fresh.length, bikes: total, empty: emptySt, full: fullSt,\n    center: pct(zone.Zentrum), edge: pct(zone.Stadtrand),\n    movesSoFar: movesNow, movesWindowMin: S.useEveryMin, ts: now } });\n\ncontext.set('st', st);\nnode.status({ fill: 'green', shape: 'dot', text: fresh.length + ' Stationen, ' + total + ' Räder, Zentrum ' +\n    pct(zone.Zentrum) + ' %, Rand ' + pct(zone.Stadtrand) + ' %' });\nreturn [out];\n",
+    "func": "// ============================================================\n//  Statistik-Dienst: Kennzahlen für die Diagramme im Dashboard\n//  Eingänge (Wildcard-Abos):\n//    .../static/stations      Lage und Kapazität der Stationen\n//    .../live/bicimad/+       Räder/Plätze je Station\n//    .../live/weather         aktuelles Wetter\n//    .../stats/history        eigener Verlauf (retained) -> wird nach einem Neustart übernommen\n//    Takt jede Minute\n//  Ausgänge (retained):\n//    .../stats/now            aktuelle Kennzahlen (Räder frei, leere/volle Stationen, Bewegungen)\n//    .../stats/spatial        je Station: Entfernung zur Puerta del Sol und Füllgrad\n//    .../stats/history        Verlauf: Pendlerwelle (alle 5 min) und Wetter/Nutzung (alle 10 min)\n//\n//  Füllgrad einer Station = Räder / (Räder + freie Plätze)\n//  Radbewegungen = Summe aller Änderungen der Räderzahl (Ausleihen + Rückgaben)\n// ============================================================\nconst cfg = global.get('cfg');\nconst P = cfg.prefix, S = cfg.stats;\nlet st = context.get('st');\nif (!st || st.prefix !== P) {\n    st = { prefix: P, stations: {}, bikes: {}, moves: 0, weather: null, restored: false,\n        hist: { wave: [], use: [] }, lastWave: 0, lastUse: Date.now(), lastSpatial: '' };\n}\nconst t = msg.topic || '';\nconst p = msg.payload;\nconst empty = p === '' || p == null || (Buffer.isBuffer(p) && p.length === 0);\nconst out = [];\n\n// Entfernung in km (Näherung, für Stadtentfernungen ausreichend)\nconst distKm = (a, b) => Math.hypot((a.lon - b.lon) * 111.32 * Math.cos(a.lat * Math.PI / 180), (a.lat - b.lat) * 110.54);\n\nif (t.endsWith('/static/stations') && Array.isArray(p)) {\n    st.stations = {};\n    for (const s of p) {\n        const d = distKm(s, S.center);\n        st.stations[s.id] = { distKm: Math.round(d * 100) / 100, zone: d <= S.centerRadiusKm ? 'Zentrum' : 'Stadtrand' };\n    }\n} else if (t.indexOf('/live/bicimad/') >= 0) {\n    if (empty || typeof p !== 'object') return null;\n    const id = t.split('/').pop();\n    const prev = st.bikes[id];\n    // retain=true = vom Broker nachgeliefert (Startzustand), keine echte Bewegung\n    if (prev && !msg.retain) st.moves += Math.abs((p.bikes || 0) - prev.bikes);\n    st.bikes[id] = { bikes: p.bikes || 0, docks: p.docks || 0, ts: p.ts || Date.now() };\n} else if (t.endsWith('/live/weather')) {\n    if (empty || typeof p !== 'object') return null;\n    st.weather = { temp: p.temp, precip: p.precip, wind: p.wind, ts: p.ts };\n} else if (t.endsWith('/stats/history')) {\n    // Nur einmal nach dem Start: gespeicherten Verlauf übernehmen (danach sind es unsere eigenen Nachrichten)\n    if (!st.restored && !empty && typeof p === 'object') {\n        st.hist = { wave: Array.isArray(p.wave) ? p.wave : [], use: Array.isArray(p.use) ? p.use : [] };\n        const lw = st.hist.wave[st.hist.wave.length - 1];\n        if (lw) st.lastWave = lw.t;\n        node.warn('Verlauf übernommen: ' + st.hist.wave.length + ' Punkte Pendlerwelle, ' + st.hist.use.length + ' Punkte Wetter/Nutzung');\n    }\n    st.restored = true;\n    context.set('st', st);\n    return null;\n}\n\n// ---------- Auswertung nur im Takt (jede Minute) ----------\nif (t !== 'tick') { context.set('st', st); return null; }\nst.restored = true;                        // spätestens jetzt: kein späteres Überschreiben mehr\nconst now = Date.now();\n\n// aktuelle Lage: nur Stationen mit frischen Daten\nconst fresh = Object.keys(st.bikes).filter(id => st.stations[id] && now - st.bikes[id].ts < S.freshMin * 60000);\nconst zone = { Zentrum: { b: 0, slots: 0 }, Stadtrand: { b: 0, slots: 0 } };\nlet total = 0, emptySt = 0, fullSt = 0;\nconst points = [];\nfor (const id of fresh) {\n    const b = st.bikes[id], s = st.stations[id];\n    const slots = b.bikes + b.docks;\n    total += b.bikes;\n    if (b.bikes === 0) emptySt++;\n    if (b.docks === 0) fullSt++;\n    if (slots > 0) {\n        zone[s.zone].b += b.bikes; zone[s.zone].slots += slots;\n        points.push([s.distKm, Math.round(b.bikes / slots * 100)]);\n    }\n}\nconst pct = z => z.slots ? Math.round(z.b / z.slots * 1000) / 10 : null;\nif (!fresh.length) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'keine frischen BiciMAD-Daten (läuft collector.py?)' });\n    context.set('st', st);\n    return null;\n}\n\n// Zentrum gegen Stadtrand (Momentaufnahme, nur senden wenn sich etwas geändert hat)\nconst sig = JSON.stringify(points);\nif (sig !== st.lastSpatial) {\n    st.lastSpatial = sig;\n    out.push({ topic: P + '/stats/spatial', qos: 0, retain: true,\n        payload: { points: points, centerRadiusKm: S.centerRadiusKm, ts: now } });\n}\n\nlet histChanged = false;\n// Pendlerwelle: alle S.waveEveryMin Minuten ein Punkt\nif (now - st.lastWave >= S.waveEveryMin * 60000 - 5000) {\n    st.lastWave = now;\n    st.hist.wave.push({ t: now, center: pct(zone.Zentrum), edge: pct(zone.Stadtrand), total: total });\n    st.hist.wave = st.hist.wave.filter(w => now - w.t <= S.waveKeepH * 3600000);\n    histChanged = true;\n}\n// Wetter und Radnutzung: alle S.useEveryMin Minuten ein Punkt (Bewegungen im Intervall + Wetter)\nconst movesNow = st.moves;\nif (now - st.lastUse >= S.useEveryMin * 60000 - 5000) {\n    const w = st.weather && now - st.weather.ts < 30 * 60000 ? st.weather : null;\n    if (w) st.hist.use.push({ t: now, moves: st.moves, temp: w.temp, precip: w.precip, wind: w.wind });\n    st.hist.use = st.hist.use.filter(u => now - u.t <= S.useKeepD * 86400000);\n    st.moves = 0;\n    st.lastUse = now;\n    histChanged = true;\n}\nif (histChanged) out.push({ topic: P + '/stats/history', qos: 1, retain: true, payload: st.hist });\n\nout.push({ topic: P + '/stats/now', qos: 0, retain: true, payload: {\n    stations: fresh.length, bikes: total, empty: emptySt, full: fullSt,\n    center: pct(zone.Zentrum), edge: pct(zone.Stadtrand),\n    movesSoFar: movesNow, movesWindowMin: S.useEveryMin, ts: now } });\n\ncontext.set('st', st);\nnode.status({ fill: 'green', shape: 'dot', text: fresh.length + ' Stationen, ' + total + ' Räder, Zentrum ' +\n    pct(zone.Zentrum) + ' %, Rand ' + pct(zone.Stadtrand) + ' %' });\nreturn [out];\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -2837,7 +2484,7 @@
     "id": "mm7dashcmt000001",
     "type": "comment",
     "z": "cf931b46039477f7",
-    "name": "Seite \"Übersicht\": Kennzahlen und Diagramme (aus dem Tab Statistik)",
+    "name": "Seite \"Statistik\": Kennzahlen und Diagramme (aus dem Tab Statistik)",
     "info": "",
     "x": 1100,
     "y": 60,
@@ -2854,7 +2501,7 @@
     "width": "12",
     "height": "0",
     "head": "",
-    "format": "<template>\n    <div class=\"kp\">\n        <div v-if=\"d.collectorDown\" class=\"kp-alert\">\n            ⚠ Keine Live-Daten von BiciMAD. Läuft <b>collector.py</b>? Starten mit <code>py collector.py</code> im Ordner python.\n        </div>\n        <div class=\"kp-tiles\">\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Wetter (Sol)<span v-if=\"d.weather && d.weather.demo\" class=\"kp-demo\">Simulation</span></div>\n                <template v-if=\"d.weather\">\n                    <div class=\"kp-big\">{{ d.weather.temp }} °C</div>\n                    <div class=\"kp-sub\">{{ d.weather.now }} · Wind {{ d.weather.wind }} km/h</div>\n                    <div class=\"kp-sub\">{{ d.weather.nextHour }}</div>\n                </template>\n                <div v-else class=\"kp-sub\">noch keine Wetterdaten</div>\n            </div>\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Freie Räder</div>\n                <template v-if=\"d.bikes\">\n                    <div class=\"kp-big\">{{ d.bikes.total }}</div>\n                    <div class=\"kp-sub\">an {{ d.bikes.stations }} Stationen</div>\n                    <div class=\"kp-sub\">{{ d.bikes.empty }} leer · {{ d.bikes.full }} voll</div>\n                </template>\n                <div v-else class=\"kp-sub\">wird berechnet (jede Minute)</div>\n            </div>\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Füllgrad</div>\n                <template v-if=\"d.bikes\">\n                    <div class=\"kp-row\"><span class=\"kp-dot kp-c\"></span>Zentrum <b>{{ d.bikes.center }} %</b></div>\n                    <div class=\"kp-row\"><span class=\"kp-dot kp-e\"></span>Stadtrand <b>{{ d.bikes.edge }} %</b></div>\n                    <div class=\"kp-sub\">Räder ÷ Stellplätze</div>\n                </template>\n                <div v-else class=\"kp-sub\">–</div>\n            </div>\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Radbewegungen</div>\n                <template v-if=\"d.moves\">\n                    <div class=\"kp-big\">{{ d.moves.value }}</div>\n                    <div class=\"kp-sub\">in den 10 min bis {{ d.moves.at }}</div>\n                </template>\n                <div v-else class=\"kp-sub\">erster Wert nach 10 min</div>\n            </div>\n        </div>\n        <div class=\"kp-src\">\n            Datenquellen:\n            <span v-for=\"s in d.sources\" :key=\"s.name\" class=\"kp-chip\" :class=\"'kp-' + s.state\" :title=\"s.text\">{{ s.name }}</span>\n        </div>\n    </div>\n</template>\n\n<script>\nexport default {\n    computed: {\n        d () {\n            return (this.msg && this.msg.payload) || { sources: [] }\n        }\n    }\n}\n</script>\n\n<style>\n.kp { width: 100%; display: flex; flex-direction: column; gap: 10px; }\n.kp-alert { background: #fff4ec; color: #7c2d12; border: 1px solid #fdba8c; border-radius: 6px; padding: 8px 12px; font-size: 14px; }\n.kp-alert code { background: #fde7d6; padding: 0 4px; border-radius: 3px; }\n.kp-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }\n.kp-tile { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fafbfb; }\n.kp-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; display: flex; justify-content: space-between; gap: 6px; }\n.kp-demo { background: #e0e7ff; color: #3730a3; border-radius: 8px; padding: 0 6px; text-transform: none; letter-spacing: 0; }\n.kp-big { font-size: 26px; font-weight: 700; color: #111827; line-height: 1.25; }\n.kp-sub { font-size: 12.5px; color: #4b5563; }\n.kp-row { font-size: 15px; color: #111827; margin: 3px 0; }\n.kp-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }\n.kp-c { background: #1f6f50; }\n.kp-e { background: #d97706; }\n.kp-src { font-size: 12.5px; color: #6b7280; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }\n.kp-chip { border-radius: 10px; padding: 1px 8px; font-weight: 600; }\n.kp-ok { background: #dcfce7; color: #166534; }\n.kp-fehlt { background: #fee2e2; color: #991b1b; }\n.kp-aus { background: #f3f4f6; color: #6b7280; }\n</style>\n",
+    "format": "<template>\n    <div class=\"kp\">\n        <div v-if=\"d.collectorDown\" class=\"kp-alert\">\n            ⚠ Keine Live-Daten von BiciMAD. Läuft <b>collector.py</b>? Starten mit <code>py collector.py</code> im Ordner python.\n        </div>\n        <div class=\"kp-tiles\">\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Wetter (Sol)</div>\n                <template v-if=\"d.weather\">\n                    <div class=\"kp-big\">{{ d.weather.temp }} °C</div>\n                    <div class=\"kp-sub\">{{ d.weather.now }} · Wind {{ d.weather.wind }} km/h</div>\n                    <div class=\"kp-sub\">{{ d.weather.nextHour }}</div>\n                </template>\n                <div v-else class=\"kp-sub\">noch keine Wetterdaten</div>\n            </div>\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Freie Räder</div>\n                <template v-if=\"d.bikes\">\n                    <div class=\"kp-big\">{{ d.bikes.total }}</div>\n                    <div class=\"kp-sub\">an {{ d.bikes.stations }} Stationen</div>\n                    <div class=\"kp-sub\">{{ d.bikes.empty }} leer · {{ d.bikes.full }} voll</div>\n                </template>\n                <div v-else class=\"kp-sub\">wird berechnet (jede Minute)</div>\n            </div>\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Füllgrad</div>\n                <template v-if=\"d.bikes\">\n                    <div class=\"kp-row\"><span class=\"kp-dot kp-c\"></span>Zentrum <b>{{ d.bikes.center }} %</b></div>\n                    <div class=\"kp-row\"><span class=\"kp-dot kp-e\"></span>Stadtrand <b>{{ d.bikes.edge }} %</b></div>\n                    <div class=\"kp-sub\">Räder ÷ Stellplätze</div>\n                </template>\n                <div v-else class=\"kp-sub\">–</div>\n            </div>\n            <div class=\"kp-tile\">\n                <div class=\"kp-label\">Radbewegungen</div>\n                <template v-if=\"d.moves\">\n                    <div class=\"kp-big\">{{ d.moves.value }}</div>\n                    <div class=\"kp-sub\">in den 10 min bis {{ d.moves.at }}</div>\n                </template>\n                <div v-else class=\"kp-sub\">erster Wert nach 10 min</div>\n            </div>\n        </div>\n        <div class=\"kp-src\">\n            Datenquellen:\n            <span v-for=\"s in d.sources\" :key=\"s.name\" class=\"kp-chip\" :class=\"'kp-' + s.state\" :title=\"s.text\">{{ s.name }}</span>\n        </div>\n    </div>\n</template>\n\n<script>\nexport default {\n    computed: {\n        d () {\n            return (this.msg && this.msg.payload) || { sources: [] }\n        }\n    }\n}\n</script>\n\n<style>\n.kp { width: 100%; display: flex; flex-direction: column; gap: 10px; }\n.kp-alert { background: #fff4ec; color: #7c2d12; border: 1px solid #fdba8c; border-radius: 6px; padding: 8px 12px; font-size: 14px; }\n.kp-alert code { background: #fde7d6; padding: 0 4px; border-radius: 3px; }\n.kp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }\n.kp-tile { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fafbfb; }\n.kp-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; display: flex; justify-content: space-between; gap: 6px; }\n.kp-big { font-size: 26px; font-weight: 700; color: #111827; line-height: 1.25; }\n.kp-sub { font-size: 12.5px; color: #4b5563; }\n.kp-row { font-size: 15px; color: #111827; margin: 3px 0; }\n.kp-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }\n.kp-c { background: #1f6f50; }\n.kp-e { background: #d97706; }\n.kp-src { font-size: 12.5px; color: #6b7280; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }\n.kp-chip { border-radius: 10px; padding: 1px 8px; font-weight: 600; }\n.kp-ok { background: #dcfce7; color: #166534; }\n.kp-fehlt { background: #fee2e2; color: #991b1b; }\n.kp-aus { background: #f3f4f6; color: #6b7280; }\n</style>\n",
     "storeOutMessages": true,
     "passthru": false,
     "resendOnRefresh": true,
@@ -2872,7 +2519,7 @@
     "type": "function",
     "z": "cf931b46039477f7",
     "name": "Kennzahlen",
-    "func": "// Kennzahlen \"Madrid jetzt\" (Seite \"Meine Routen\", oben rechts)\n//   .../stats/now   Räder, leere/volle Stationen, Füllgrad Zentrum/Stadtrand\n//   .../live/weather  aktuelles Wetter + Regen in der nächsten Stunde\n//   .../system/+    Status der Datenquellen (Birth / Close / Last Will)\n//   .../stats/history  letzter Wert \"Radbewegungen pro 10 min\"\nconst cfg = global.get('cfg');\nlet k = context.get('k');\nif (!k || k.prefix !== cfg.prefix) k = { prefix: cfg.prefix, now: null, weather: null, system: {}, moves: null };\nconst t = msg.topic || '', p = msg.payload;\nconst empty = p === '' || p == null || (Buffer.isBuffer(p) && p.length === 0);\nif (t.endsWith('/stats/now') && !empty) k.now = p;\nelse if (t.endsWith('/live/weather') && !empty) k.weather = p;\nelse if (t.indexOf('/system/') >= 0) k.system[t.split('/').pop()] = empty ? null : String(p);\nelse if (t.endsWith('/stats/history') && !empty) {\n    const u = (p.use || []).slice(-1)[0];\n    k.moves = u ? { moves: u.moves, t: u.t } : null;\n}\ncontext.set('k', k);\n\nconst hm = ms => new Date(ms).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst num = x => x == null ? '–' : String(Math.round(x * 10) / 10).replace('.', ',');\nconst fmt = n => n == null ? '–' : String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');\nlet weather = null;\nif (k.weather) {\n    const w = k.weather;\n    const next = (w.forecast || []).filter(f => f.t + 15 * 60000 > Date.now() && f.t <= Date.now() + 3600000);\n    const maxP = next.length ? Math.max(...next.map(f => f.precip || 0)) : null;\n    const rainAt = next.find(f => (f.precip || 0) >= 0.1);\n    weather = { temp: num(w.temp), wind: Math.round(w.wind), precipNow: num(w.precip),\n        now: (w.precip || 0) >= 0.1 ? 'Regen' : 'trocken',\n        nextHour: maxP == null ? 'keine Vorhersage' : rainAt ? 'Regen ab ' + hm(rainAt.t) + ' (bis ' + num(maxP) + ' mm)' : 'nächste Stunde trocken',\n        at: hm(w.ts), demo: !!w.demo };\n}\nconst names = { bicimad: 'BiciMAD', weather: 'Wetter', fahrplan: 'Fahrplan', emt: 'EMT-Bus', sim: 'Simulator' };\nconst sources = ['bicimad', 'weather', 'fahrplan', 'emt'].map(n => {\n    const s = k.system[n];\n    return { name: names[n], state: !s ? 'aus' : s.indexOf('online') === 0 ? 'ok' : 'fehlt', text: s || (n === 'emt' ? 'nicht eingerichtet' : 'noch nie gemeldet') };\n});\nconst n = k.now;\nreturn { payload: {\n    weather: weather,\n    bikes: n ? { total: fmt(n.bikes), stations: n.stations, empty: n.empty, full: n.full,\n        center: num(n.center), edge: num(n.edge), at: hm(n.ts) } : null,\n    moves: k.moves ? { value: fmt(k.moves.moves), at: hm(k.moves.t) } : null,\n    sources: sources,\n    collectorDown: sources[0].state !== 'ok'\n} };\n",
+    "func": "// Kennzahlen \"Madrid jetzt\" (Seite \"Statistik\", oben)\n//   .../stats/now   Räder, leere/volle Stationen, Füllgrad Zentrum/Stadtrand\n//   .../live/weather  aktuelles Wetter + Regen in der nächsten Stunde\n//   .../system/+    Status der Datenquellen (Birth / Close / Last Will)\n//   .../stats/history  letzter Wert \"Radbewegungen pro 10 min\"\nconst cfg = global.get('cfg');\nlet k = context.get('k');\nif (!k || k.prefix !== cfg.prefix) k = { prefix: cfg.prefix, now: null, weather: null, system: {}, moves: null };\nconst t = msg.topic || '', p = msg.payload;\nconst empty = p === '' || p == null || (Buffer.isBuffer(p) && p.length === 0);\nif (t.endsWith('/stats/now') && !empty) k.now = p;\nelse if (t.endsWith('/live/weather') && !empty) k.weather = p;\nelse if (t.indexOf('/system/') >= 0) k.system[t.split('/').pop()] = empty ? null : String(p);\nelse if (t.endsWith('/stats/history') && !empty) {\n    const u = (p.use || []).slice(-1)[0];\n    k.moves = u ? { moves: u.moves, t: u.t } : null;\n}\ncontext.set('k', k);\n\nconst hm = ms => new Date(ms).toLocaleTimeString('de-DE', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst num = x => x == null ? '–' : String(Math.round(x * 10) / 10).replace('.', ',');\nconst fmt = n => n == null ? '–' : String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');\nlet weather = null;\nif (k.weather) {\n    const w = k.weather;\n    const next = (w.forecast || []).filter(f => f.t + 15 * 60000 > Date.now() && f.t <= Date.now() + 3600000);\n    const maxP = next.length ? Math.max(...next.map(f => f.precip || 0)) : null;\n    const rainAt = next.find(f => (f.precip || 0) >= 0.1);\n    weather = { temp: num(w.temp), wind: Math.round(w.wind), precipNow: num(w.precip),\n        now: (w.precip || 0) >= 0.1 ? 'Regen' : 'trocken',\n        nextHour: maxP == null ? 'keine Vorhersage' : rainAt ? 'Regen ab ' + hm(rainAt.t) + ' (bis ' + num(maxP) + ' mm)' : 'nächste Stunde trocken',\n        at: hm(w.ts) };\n}\nconst names = { bicimad: 'BiciMAD', weather: 'Wetter', fahrplan: 'Fahrplan', emt: 'EMT-Bus' };\nconst sources = ['bicimad', 'weather', 'fahrplan', 'emt'].map(n => {\n    const s = k.system[n];\n    return { name: names[n], state: !s ? 'aus' : s.indexOf('online') === 0 ? 'ok' : 'fehlt', text: s || (n === 'emt' ? 'nicht eingerichtet' : 'noch nie gemeldet') };\n});\nconst n = k.now;\nreturn { payload: {\n    weather: weather,\n    bikes: n ? { total: fmt(n.bikes), stations: n.stations, empty: n.empty, full: n.full,\n        center: num(n.center), edge: num(n.edge), at: hm(n.ts) } : null,\n    moves: k.moves ? { value: fmt(k.moves.moves), at: hm(k.moves.t) } : null,\n    sources: sources,\n    collectorDown: sources[0].state !== 'ok'\n} };\n",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,

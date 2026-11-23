@@ -31,7 +31,6 @@ flowchart LR
     PD[Profil-Dienst]
     RE[Empfehlungsdienst]
     DB[Dashboard]
-    SIM[Simulator<br/>g6-sim]
     STA[Statistik-Dienst]
   end
   BR((MQTT-Broker<br/>test.mosquitto.org))
@@ -49,13 +48,12 @@ flowchart LR
   BR -- profiles, routes, settings, live, system --> RE
   RE -- reco, alerts --> BR
   BR -- reco, alerts, system --> DB
-  DB -- routes, settings, sim/cmd --> BR
-  SIM -- live, sim/state --> BR
+  DB -- routes, settings --> BR
   BR -- live, stations --> STA
   STA -- stats --> BR
 ```
 
-**Python an den Rändern, Node-RED in der Mitte, MQTT verbindet alles.** Kein Dienst kennt einen anderen direkt. Der Simulator veröffentlicht für die Vorführung auf denselben Topics wie der Collector, und die übrigen Dienste merken keinen Unterschied.
+**Python an den Rändern, Node-RED in der Mitte, MQTT verbindet alles.** Kein Dienst kennt einen anderen direkt: Jeder veröffentlicht und abonniert nur Topics.
 
 | Teil | Sprache | Aufgabe |
 |---|---|---|
@@ -64,18 +62,17 @@ flowchart LR
 | `python/gtfs_plan.py` | Python | Fahrplan der EMT-Busse (GTFS): beste direkte Busverbindung je Route |
 | `python/client.py` | Python | **Producer + Consumer**: Route und Einstellungen speichern, Meldungen empfangen |
 | Profil-Dienst | Node-RED | Route → Fahrzeit, Fußweg, ÖPNV-Schätzung (mit ORS genauer) |
-| Empfehlungsdienst | Node-RED | Rad ok oder Warnung, Meldungen im Zeitfenster |
+| Empfehlungsdienst | Node-RED | vorher „geplant“ (Vorschau), im Zeitfenster Rad ok oder Warnung und Meldungen |
 | Statistik-Dienst | Node-RED | Kennzahlen für die Diagramme: Pendlerwelle, Zentrum gegen Stadtrand, Wetter und Radnutzung |
-| Dashboard | Node-RED | Übersicht (Empfehlung + Diagramme), Formulare, Systemstatus, Demo |
-| Simulator | Node-RED | fester Demo-Ablauf für die Vorführung |
+| Dashboard | Node-RED | Routenübersicht (Empfehlungen), Statistik (Diagramme), Routen verwalten (Formulare), Systemstatus, Demo |
 
 ## Topics (Präfix `upm-dsiot-g6/move`)
 
 | Topic | Inhalt | QoS | Retained | Publisher |
 |---|---|---|---|---|
 | `static/stations` | Stationsliste (id, name, lat, lon, capacity) | 1 | ja | Collector |
-| `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, nur bei Änderung, spätestens alle 10 min | 0 | ja | Collector / Simulator |
-| `live/weather` | aktuelles Wetter + Vorhersage für 24 h in 15-min-Schritten | 0 | ja | Collector / Simulator |
+| `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, nur bei Änderung, spätestens alle 10 min | 0 | ja | Collector |
+| `live/weather` | aktuelles Wetter + Vorhersage für 24 h in 15-min-Schritten | 0 | ja | Collector |
 | `live/emt/<nutzer>/<route>` | `{stop:{id,name,distM}, arrivals:[{line,destination,min}], ts}` nächste Busse am Startpunkt, alle 90 s | 0 | ja | Collector (nur mit EMT-Zugang) |
 | `plan/<nutzer>/<route>` | beste direkte Busverbindung laut Fahrplan zur nächsten Abfahrt: Linie, Ein-/Ausstieg, Abfahrt oder Takt, Fahrzeit, Gesamtzeit; `status` ok / nodirect / noservice | 1 | ja | Collector |
 | `stats/now` | freie Räder, leere/volle Stationen, Füllgrad Zentrum/Stadtrand | 0 | ja | Statistik-Dienst |
@@ -84,13 +81,11 @@ flowchart LR
 | `routes/<nutzer>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, leer = löschen | 1 | ja | Client / Dashboard |
 | `users/<nutzer>/settings` | `{rain: kein/leicht/egal, windMax, tempMin, tempMax}` | 1 | ja | Client / Dashboard |
 | `profiles/<nutzer>/<route>` | Fahrzeit, Höhenmeter, Fußweg, ÖPNV-Schätzung | 1 | ja | Profil-Dienst |
-| `reco/<nutzer>/<route>` | Status ok / warn / unbekannt mit Gründen und Alternativen | 1 | ja | Empfehlungsdienst |
+| `reco/<nutzer>/<route>` | Status geplant / ok / warn / unbekannt mit Gründen und Alternativen | 1 | ja | Empfehlungsdienst |
 | `alerts/<nutzer>` | Vorab-Info, Warnung, Entwarnung (Text) | 1 | nein | Empfehlungsdienst |
 | `system/<dienst>` | `online` / `offline (beendet)` / `offline (Absturz)` | 1 | ja | Birth / Close / **Last Will** |
-| `sim/cmd`, `sim/state` | Demo starten/beenden, Zustand | 1 | nein / ja | Dashboard / Simulator |
-| `cmd/bicimad/refresh`, `cmd/weather/refresh` | Collector soll sofort alles neu senden | 1 | nein | Simulator |
 
-**Last-Will-Topics:** `system/bicimad`, `system/weather`, `system/fahrplan` und `system/emt` (Collector, je eigene Verbindung), `system/sim` (Simulator), `system/client-<nutzer>` (Client). Bricht eine Verbindung ohne DISCONNECT ab, veröffentlicht der Broker „offline (Absturz)“ (retained). Beim sauberen Beenden senden die Programme vorher „offline (beendet)“, beim Start „online“ (Birth).
+**Last-Will-Topics:** `system/bicimad`, `system/weather`, `system/fahrplan` und `system/emt` (Collector, je eigene Verbindung), `system/client-<nutzer>` (Client). Bricht eine Verbindung ohne DISCONNECT ab, veröffentlicht der Broker „offline (Absturz)“ (retained). Beim sauberen Beenden senden die Programme vorher „offline (beendet)“, beim Start „online“ (Birth).
 
 ## Zustellsemantik
 
@@ -107,14 +102,15 @@ Alle Werte stehen in Node-RED im Tab *⚙ Konfiguration* unter `reco`.
 
 | Prüfung | Regel |
 |---|---|
+| Zeitfenster | Empfehlung erst 30 min vor der Abfahrt (`windowMin`). Vorher ist die Route **„geplant“**: Radfahrzeit, Wetter-Vorschau (sobald die Abfahrt in der 24-h-Vorhersage liegt), Busvergleich und „Empfehlung ab HH:MM“, aber kein Urteil und keine Räderzahl, weil Räder nur kurzfristig aussagekräftig sind. Würde das Wetter eine Grenze verletzen, steht das als Vorschau auf der Karte, ohne Meldung. |
 | Wetter | Vorhersage für die Fahrt (Abfahrt bis Ankunft). Warnung, wenn die persönliche Grenze überschritten wird: Regen (kein Regen: ab 0,1 mm/15 min, leichter Regen ok: ab 1,0 mm), Wind über `windMax`, Temperatur außerhalb `tempMin`–`tempMax`. |
 | Räder | Ab 3 Rädern ok. Weniger: Ausweichstation im Umkreis von 500 m mit ≥ 3 Rädern → nur Hinweis. Keine → Warnung. |
 | Alternativen | Zu Fuß oder ÖPNV mindestens 5 min schneller → Warnung. In jeder Warnung stehen beide Alternativen. |
 | ÖPNV | 1. **Fahrplan** (GTFS der EMT): beste direkte Buslinie von einer Haltestelle bis 600 m um den Start zu einer bis 600 m um das Ziel, zur geplanten Abfahrt. Zeit = Fußweg + Warten (bei Takt-Linien halber Takt) + Fahrzeit laut Plan + Fußweg. Fährt zu der Zeit kein direkter Bus (Wartezeit > 60 min), zählt ÖPNV nicht als Alternative. 2. **EMT live** (Abfahrt in ≤ 20 min): fährt die Fahrplan-Linie gerade an der Haltestelle, ersetzt die echte Wartezeit die geplante. 3. **Schätzung**, wenn es keine direkte Linie gibt (mit Umsteigen evtl. möglich): Wege + 4 min Warten + Strecke mit 18 km/h. |
 | Zielstation voll | kein Thema, das Rad kann daneben abgestellt werden |
 | Standardgrenzen | vorsichtig: kein Regen, Wind bis 25 km/h, 8–30 °C |
-| Meldungen | nur 30 min vor der Abfahrt: Warnung bei Wechsel auf „warn“, Vorab-Info 15 min vorher, Entwarnung nur nach einer Warnung |
-| Datenausfall | fehlen Stationsdaten, ist der Status „unbekannt“ und es gibt keine Meldung; fehlt das Wetter, wird ohne Wetter bewertet (mit Hinweis) |
+| Meldungen | nur im Zeitfenster: Warnung bei Wechsel auf „warn“ (auch beim Eintritt ins Fenster), Vorab-Info 15 min vorher, Entwarnung nur nach einer Warnung |
+| Datenausfall | fehlen im Zeitfenster Stations- oder Wetterdaten, ist der Status „unbekannt“ und es gibt keine Meldung (sonst käme z. B. nach einem Absturz des Collectors eine falsche Entwarnung) |
 
 ---
 
@@ -166,27 +162,16 @@ python3 client.py empfangen gabriel                     # Meldungen (persistente
 python3 client.py route-loeschen gabriel zur-uni
 ```
 
-## Demo (ca. 4 min, Seite *System & Demo*)
+## Demo (ca. 4 min, nur echte Daten)
 
-Bildschirm: links das Dashboard (*Übersicht*), rechts ein Terminal mit `py client.py empfangen demo`. Im Dashboard gibt es keine Popups: Das Dashboard zeigt den Zustand, die Meldungen gehen an den Client.
+Bildschirm: links das Dashboard (*Routenübersicht*), rechts ein Terminal mit `python3 client.py empfangen demo` und daneben ein Mitleser (`mosquitto_sub` oder MQTT Explorer). Im Dashboard gibt es keine Popups: Das Dashboard zeigt den Zustand, die Meldungen gehen an den Client.
 
-1. **Demo-Ablauf starten**: legt die Route „Zur Uni“ (Sol → Ciudad Universitaria) für den Nutzer `demo` an (Abfahrt in 14 min, Standardgrenzen) und startet den Ablauf. Das klappt beliebig oft hintereinander, weil die Abfahrtszeit jedes Mal neu gesetzt wird. (*Demo-Route anlegen* legt nur die Route an.)
+1. **Route anlegen**: auf *Routen verwalten* als Nutzer `demo` eine Route mit Abfahrt in ca. 12 min anlegen (oder auf *System & Demo* „Demo-Route anlegen“: Sol → Ciudad Universitaria, Abfahrt in 14 min, Standardgrenzen). Der Mitleser zeigt `routes/demo/…`, die Karte erscheint, der Client meldet „gespeichert … ✓ Rad passt“ und kurz danach die Vorab-Info.
+2. **Personalisierung mit echtem Wetter**: unter *Meine Einstellungen* die Mindesttemperatur über die aktuelle Temperatur setzen → **Warnung** mit Alternativen (Bus laut Fahrplan, zu Fuß). Wieder zurücksetzen → **Entwarnung**.
+3. **Last Will**: Collector-Fenster hart schließen (oder `kill -9`) → nach ca. 45 s „offline (Absturz)“, auf *Statistik* und *System & Demo* erscheint ein Hinweis.
+4. Optional **persistente Session**: Client beenden, Einstellung ändern, Client neu starten → „(Session fortgesetzt)“, die verpasste Meldung kommt nach.
 
-| Zeit | Simulation | Ergebnis |
-|---|---|---|
-| 0 s | alles gut | Karte „✓ Rad passt“, Vorab-Info im Client |
-| 20 s | Startstation fast leer, Nachbarn haben Räder | nur Hinweis „Ausweichstation …“, **keine** Meldung |
-| 60 s | Regen in der Vorhersage | **Warnung** mit Alternativen im Client |
-| 120 s | Regen vorbei, Räder aufgefüllt | **Entwarnung** |
-| ca. 3 min | Ende | Simulation beendet sich selbst, der Collector sendet wieder echte Werte |
-
-2. **Personalisierung live** (während der Warnung): `py client.py einstellungen demo --regen egal` → sofort **Entwarnung**.
-3. **Last Will**: Collector-Fenster hart schließen (oder `kill -9`) → nach ca. 45 s „offline (Absturz)“, auf der Übersicht erscheint ein Hinweis. Die Demo läuft weiter, weil der Simulator die Daten liefert.
-4. **Simulation beenden** bricht den Ablauf jederzeit ab.
-
-Simulierte Werte (`demo: true`) gehen nicht in die Statistik ein und gelten in der Empfehlung nur, solange der Simulator sendet.
-
-## Dashboard-Diagramme (Seite *Übersicht*)
+## Dashboard-Diagramme (Seite *Statistik*)
 
 | Diagramm | Was es zeigt | Daten |
 |---|---|---|
@@ -203,11 +188,11 @@ Der Verlauf liegt retained auf `stats/history` und wird nach einem Neustart von 
 |---|---|---|
 | 1 | Dashboard neu laden | sofort gefüllt (retained) |
 | 2 | Route mit Abfahrt in 16 min anlegen | nach ca. 1 min Vorab-Info |
-| 3 | Route mit Abfahrt in 2 h, Demo-Ablauf | Karte wechselt, **keine** Meldung (außerhalb des Zeitfensters) |
+| 3 | Route mit Abfahrt in 2 h, Mindesttemperatur über aktuelle Temperatur setzen | Karte bleibt „geplant“ mit Vorschau „laut Vorhersage …“, **keine** Meldung; 30 min vor der Abfahrt kommt die Warnung |
 | 4 | Collector mit Strg+C beenden | `system/bicimad` = „offline (beendet)“ |
 | 5 | Collector hart beenden (`kill -9 <PID>`) | „offline (Absturz)“ (Last Will) |
-| 6 | Client beenden, Demo-Ablauf, Client neu starten | „Session fortgesetzt“, verpasste Meldungen kommen nach |
-| 7 | Einstellungen auf „Regen egal“, Demo-Ablauf | keine Regen-Warnung für diesen Nutzer |
+| 6 | Client beenden, Einstellung ändern (Warnung auslösen), Client neu starten | „Session fortgesetzt“, verpasste Meldungen kommen nach |
+| 7 | Zwei Nutzer mit derselben Route, nur einer mit enger Temperaturgrenze | Warnung nur für diesen Nutzer |
 | 8 | Collector beenden und 15 min warten | Status „? Daten fehlen“, keine Meldung |
 
 Alles mitlesen: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v`
@@ -222,7 +207,7 @@ Alles mitlesen: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v
 ## Ordnerstruktur
 
 ```
-flows/      madridmove.json (alle 6 Tabs: Konfiguration, Profil-Dienst, Empfehlung, Dashboard, Simulation, Statistik)
+flows/      madridmove.json (alle 5 Tabs: Konfiguration, Profil-Dienst, Empfehlung, Dashboard, Statistik)
 python/     collector.py, client.py, emt.py, gtfs_plan.py, config.py, requirements.txt, secrets.env.example
             (secrets.env, .emt_token.json und gtfs/: nur lokal, git-ignoriert)
 configure.py

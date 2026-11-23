@@ -33,7 +33,7 @@ for path in files:
     old = m.group(1)
     shutil.copy(path, path + '.bak')
     s = s.replace('upm-dsiot-' + old + '/move', 'upm-dsiot-' + tag + '/move')
-    s = re.sub(r'\b' + re.escape(old) + r'-(col-bicimad|col-weather|app|sim)\b', tag + r'-\1', s)
+    s = re.sub(r'\b' + re.escape(old) + r'-(col-bicimad|col-weather|col-fahrplan|col-emt|app)\b', tag + r'-\1', s)
     s = re.sub(r"^TAG = '[^']*'", "TAG = '" + tag + "'", s, flags=re.M)
     open(path, 'w', encoding='utf-8').write(s)
     print(f'{path}: {old} -> {tag}')
