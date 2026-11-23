@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""MadridMove Client: die App des Nutzers (Producer und Consumer).
+"""MadridMove client: the user's app (producer and consumer).
 
-Befehle:
-    python3 client.py stationen <suchtext>
-        Station suchen (ID für Routen), z. B.  stationen sol
-    python3 client.py route-anlegen <nutzer> <routenname> --start <ID> --ziel <ID> --zeit 08:30 [--tage 1-5]
-        Route speichern (retained, QoS 1). Tage: 1=Mo ... 7=So, z. B. 1-5 oder 1,3,5
-    python3 client.py routen <nutzer>
-        Eigene Routen und aktuellen Status anzeigen
-    python3 client.py route-loeschen <nutzer> <routen-id>
-        Route löschen (leere retained Nachricht)
-    python3 client.py einstellungen <nutzer> [--regen kein|leicht|egal] [--wind 25] [--temp 8 30]
-        Persönliche Grenzen setzen bzw. anzeigen (ohne Optionen)
-    python3 client.py empfangen <nutzer>
-        Meldungen empfangen (Vorab-Info, Warnung, Entwarnung). Persistente Session:
-        Meldungen, die ankommen, während der Client aus ist, werden beim nächsten Start nachgeliefert.
+Commands:
+    python3 client.py stations <search>
+        Find a station (ID for routes), e.g.  stations sol
+    python3 client.py add-route <user> <route-name> --from <ID> --to <ID> --time 08:30 [--days 1-5]
+        Save a route (retained, QoS 1). Days: 1=Mon ... 7=Sun, e.g. 1-5 or 1,3,5
+    python3 client.py routes <user>
+        Show your routes and their current status
+    python3 client.py delete-route <user> <route-id>
+        Delete a route (empty retained message)
+    python3 client.py settings <user> [--rain none|light|any] [--wind 25] [--temp 8 30]
+        Set or show (without options) your personal limits
+    python3 client.py listen <user>
+        Receive notifications (pre-departure info, warning, all-clear). Persistent session:
+        notifications that arrive while the client is off are delivered on the next start.
 """
 import argparse
 import json
@@ -29,7 +29,9 @@ import paho.mqtt.client as mqtt
 
 from config import BROKER, KEEPALIVE, PORT, PREFIX, TAG
 
-DEFAULTS = {'rain': 'kein', 'windMax': 25, 'tempMin': 8, 'tempMax': 30}   # "vorsichtig"
+DEFAULTS = {'rain': 'none', 'windMax': 25, 'tempMin': 8, 'tempMax': 30}   # "cautious"
+RAIN_OLD = {'kein': 'none', 'leicht': 'light', 'egal': 'any'}            # values saved by older versions
+RAIN_TEXT = {'none': 'no rain', 'light': 'light rain ok', 'any': 'rain does not matter'}
 
 
 def norm(s):
@@ -49,7 +51,7 @@ def connect(client_id=None, clean=True):
 
 
 def read_retained(topic, wait=3.0):
-    """Liest retained Nachrichten zu einem Topic (auch mit Wildcards): {topic: payload}."""
+    """Reads retained messages for a topic (wildcards allowed): {topic: payload}."""
     got, done = {}, threading.Event()
     c = connect()
 
@@ -71,6 +73,7 @@ def read_retained(topic, wait=3.0):
 
 
 def publish(topic, payload, retain=True):
+    """Publishes with QoS 1 and waits for the broker's acknowledgement. payload None = empty message."""
     c = connect()
     c.loop_start()
     data = '' if payload is None else json.dumps(payload, ensure_ascii=False)
@@ -83,7 +86,7 @@ def stations():
     got = read_retained(f'{PREFIX}/static/stations', wait=8)
     lst = next(iter(got.values()), None)
     if not lst:
-        sys.exit('Keine Stationsliste auf dem Broker. Läuft der Collector?')
+        sys.exit('No station list on the broker. Is the collector running?')
     return {s['id']: s for s in lst}
 
 
@@ -96,89 +99,90 @@ def parse_days(text):
         elif part.strip():
             days.add(int(part))
     if not days or not days <= set(range(1, 8)):
-        sys.exit('Tage bitte als 1-7 angeben, z. B. 1-5 oder 1,3,5')
+        sys.exit('Please give days as 1-7, e.g. 1-5 or 1,3,5')
     return sorted(days)
 
 
-# ---------------------------------------------------------------- Befehle
+# ---------------------------------------------------------------- commands
 
-def cmd_stationen(a):
-    q = norm(a.suchtext)
+def cmd_stations(a):
+    q = norm(a.search)
     hits = [s for s in stations().values() if q in norm(s['name']) or q == s['id']]
     for s in sorted(hits, key=lambda s: s['name'])[:25]:
-        print(f"{s['id']:>6}  {s['name']}  ({s.get('capacity') or '?'} Plätze)")
+        print(f"{s['id']:>6}  {s['name']}  ({s.get('capacity') or '?'} docks)")
     if not hits:
-        print('Keine Station gefunden.')
+        print('No station found.')
 
 
-def cmd_route_anlegen(a):
+def cmd_add_route(a):
     st = stations()
-    for sid in (a.start, a.ziel):
+    for sid in (a.start, a.to):
         if sid not in st:
-            sys.exit(f'Station {sid} unbekannt. Suchen mit: python3 client.py stationen <name>')
-    if a.start == a.ziel:
-        sys.exit('Start und Ziel sind gleich.')
-    if not re.fullmatch(r'\d{1,2}:\d{2}', a.zeit):
-        sys.exit('Zeit bitte als HH:MM, z. B. 08:30')
-    user, rid = slug(a.nutzer), slug(a.routenname)
-    route = {'name': a.routenname,
+            sys.exit(f'Unknown station {sid}. Search with: python3 client.py stations <name>')
+    if a.start == a.to:
+        sys.exit('Start and destination are the same.')
+    if not re.fullmatch(r'\d{1,2}:\d{2}', a.time):
+        sys.exit('Please give the time as HH:MM, e.g. 08:30')
+    user, rid = slug(a.user), slug(a.route_name)
+    route = {'name': a.route_name,
              'from': {'id': a.start, 'label': st[a.start]['name']},
-             'to': {'id': a.ziel, 'label': st[a.ziel]['name']},
-             'departure': {'time': a.zeit.zfill(5), 'days': parse_days(a.tage)},
+             'to': {'id': a.to, 'label': st[a.to]['name']},
+             'departure': {'time': a.time.zfill(5), 'days': parse_days(a.days)},
              'createdAt': datetime.now().isoformat(timespec='seconds')}
     publish(f'{PREFIX}/routes/{user}/{rid}', route)
-    print(f"Route {user}/{rid} gespeichert: {route['from']['label']} -> {route['to']['label']}, "
-          f"{route['departure']['time']} Uhr, Tage {route['departure']['days']}")
+    print(f"Route {user}/{rid} saved: {route['from']['label']} -> {route['to']['label']}, "
+          f"{route['departure']['time']}, days {route['departure']['days']}")
 
 
-def cmd_routen(a):
-    user = slug(a.nutzer)
+def cmd_routes(a):
+    user = slug(a.user)
     routes = read_retained(f'{PREFIX}/routes/{user}/+')
     recos = read_retained(f'{PREFIX}/reco/{user}/+')
     if not routes:
-        print('Keine Routen gespeichert.')
+        print('No routes saved.')
     for topic, r in sorted(routes.items()):
         rid = topic.split('/')[-1]
         reco = recos.get(f'{PREFIX}/reco/{user}/{rid}') or {}
-        print(f"{rid}: {r['from']['label']} -> {r['to']['label']}, {r['departure']['time']} Uhr")
+        print(f"{rid}: {r['from']['label']} -> {r['to']['label']}, {r['departure']['time']}")
         if reco:
             print(f"    {reco.get('headline', '')}  {reco.get('detail', '')}")
 
 
-def cmd_route_loeschen(a):
-    publish(f'{PREFIX}/routes/{slug(a.nutzer)}/{a.routen_id}', None)
-    print('Route gelöscht.')
+def cmd_delete_route(a):
+    publish(f'{PREFIX}/routes/{slug(a.user)}/{a.route_id}', None)
+    print('Route deleted.')
 
 
-def cmd_einstellungen(a):
-    user = slug(a.nutzer)
+def cmd_settings(a):
+    user = slug(a.user)
     topic = f'{PREFIX}/users/{user}/settings'
     cur = dict(DEFAULTS)
     cur.update(next(iter(read_retained(topic).values()), {}) or {})
+    cur['rain'] = RAIN_OLD.get(cur['rain'], cur['rain'])
     changed = False
-    if a.regen:
-        cur['rain'], changed = a.regen, True
+    if a.rain:
+        cur['rain'], changed = a.rain, True
     if a.wind is not None:
         cur['windMax'], changed = a.wind, True
     if a.temp:
         cur['tempMin'], cur['tempMax'], changed = a.temp[0], a.temp[1], True
     if changed:
         publish(topic, cur)
-        print('Gespeichert:', end=' ')
-    regen = {'kein': 'kein Regen', 'leicht': 'leichter Regen ok', 'egal': 'Regen egal'}[cur['rain']]
-    print(f"{regen}, Wind bis {cur['windMax']} km/h, {cur['tempMin']} bis {cur['tempMax']} °C")
+        print('Saved:', end=' ')
+    print(f"{RAIN_TEXT.get(cur['rain'], cur['rain'])}, wind up to {cur['windMax']} km/h, "
+          f"{cur['tempMin']} to {cur['tempMax']} °C")
 
 
-def cmd_empfangen(a):
-    user = slug(a.nutzer)
+def cmd_listen(a):
+    user = slug(a.user)
     status = f'{PREFIX}/system/client-{user}'
-    # Feste Client-ID + clean_session=False = persistente Session beim Broker
+    # Fixed client ID + clean_session=False = persistent session on the broker
     c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f'{TAG}-client-{user}', clean_session=False)
-    c.will_set(status, 'offline (Absturz)', qos=1, retain=True)
+    c.will_set(status, 'offline (crashed)', qos=1, retain=True)
 
     def on_connect(cl, ud, flags, rc, props):
-        resumed = ' (Session fortgesetzt)' if flags.session_present else ''
-        print(f'Verbunden mit {BROKER}{resumed}. Warte auf Meldungen für "{user}" ... (Strg+C beendet)')
+        resumed = ' (session resumed)' if flags.session_present else ''
+        print(f'Connected to {BROKER}{resumed}. Waiting for notifications for "{user}" ... (Ctrl+C to quit)')
         cl.publish(status, 'online', qos=1, retain=True)
         cl.subscribe(f'{PREFIX}/alerts/{user}', qos=1)
 
@@ -190,41 +194,41 @@ def cmd_empfangen(a):
     try:
         c.loop_forever()
     except KeyboardInterrupt:
-        c.publish(status, 'offline (beendet)', qos=1, retain=True).wait_for_publish(3)
+        c.publish(status, 'offline (stopped)', qos=1, retain=True).wait_for_publish(3)
         c.disconnect()
-        print('\nBeendet. Neue Meldungen werden bis zum nächsten Start beim Broker gesammelt.')
+        print('\nStopped. New notifications are kept by the broker until the next start.')
 
 
 def main():
-    p = argparse.ArgumentParser(description='MadridMove Client')
+    p = argparse.ArgumentParser(description='MadridMove client')
     sub = p.add_subparsers(dest='cmd', required=True)
-    s = sub.add_parser('stationen', help='Station suchen')
-    s.add_argument('suchtext')
-    s.set_defaults(fn=cmd_stationen)
-    s = sub.add_parser('route-anlegen', help='Route speichern')
-    s.add_argument('nutzer')
-    s.add_argument('routenname')
-    s.add_argument('--start', required=True, help='ID der Startstation')
-    s.add_argument('--ziel', required=True, help='ID der Zielstation')
-    s.add_argument('--zeit', required=True, help='Abfahrt, z. B. 08:30')
-    s.add_argument('--tage', default='1-5', help='1=Mo ... 7=So, Standard 1-5')
-    s.set_defaults(fn=cmd_route_anlegen)
-    s = sub.add_parser('routen', help='Routen und Status anzeigen')
-    s.add_argument('nutzer')
-    s.set_defaults(fn=cmd_routen)
-    s = sub.add_parser('route-loeschen', help='Route löschen')
-    s.add_argument('nutzer')
-    s.add_argument('routen_id')
-    s.set_defaults(fn=cmd_route_loeschen)
-    s = sub.add_parser('einstellungen', help='Persönliche Grenzen')
-    s.add_argument('nutzer')
-    s.add_argument('--regen', choices=['kein', 'leicht', 'egal'])
-    s.add_argument('--wind', type=int, help='maximaler Wind in km/h')
-    s.add_argument('--temp', type=int, nargs=2, metavar=('MIN', 'MAX'), help='Temperaturbereich in °C')
-    s.set_defaults(fn=cmd_einstellungen)
-    s = sub.add_parser('empfangen', help='Meldungen empfangen (persistente Session)')
-    s.add_argument('nutzer')
-    s.set_defaults(fn=cmd_empfangen)
+    s = sub.add_parser('stations', help='find a station')
+    s.add_argument('search')
+    s.set_defaults(fn=cmd_stations)
+    s = sub.add_parser('add-route', help='save a route')
+    s.add_argument('user')
+    s.add_argument('route_name', metavar='route-name')
+    s.add_argument('--from', dest='start', required=True, help='ID of the start station')
+    s.add_argument('--to', required=True, help='ID of the destination station')
+    s.add_argument('--time', required=True, help='departure, e.g. 08:30')
+    s.add_argument('--days', default='1-5', help='1=Mon ... 7=Sun, default 1-5')
+    s.set_defaults(fn=cmd_add_route)
+    s = sub.add_parser('routes', help='show routes and status')
+    s.add_argument('user')
+    s.set_defaults(fn=cmd_routes)
+    s = sub.add_parser('delete-route', help='delete a route')
+    s.add_argument('user')
+    s.add_argument('route_id', metavar='route-id')
+    s.set_defaults(fn=cmd_delete_route)
+    s = sub.add_parser('settings', help='personal limits')
+    s.add_argument('user')
+    s.add_argument('--rain', choices=['none', 'light', 'any'])
+    s.add_argument('--wind', type=int, help='maximum wind in km/h')
+    s.add_argument('--temp', type=int, nargs=2, metavar=('MIN', 'MAX'), help='temperature range in °C')
+    s.set_defaults(fn=cmd_settings)
+    s = sub.add_parser('listen', help='receive notifications (persistent session)')
+    s.add_argument('user')
+    s.set_defaults(fn=cmd_listen)
     a = p.parse_args()
     a.fn(a)
 

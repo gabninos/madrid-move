@@ -1,51 +1,51 @@
-# MadridMove – Kann ich meine BiciMAD-Fahrt wie geplant machen?
+# MadridMove – Can I make my BiciMAD trip as planned?
 
-Wer regelmäßig mit BiciMAD fährt, speichert seine Strecke: **Start- und Zielstation, Abfahrtszeit, Wochentage**. Vor jeder Fahrt meldet sich das System von selbst:
+Regular BiciMAD riders save their trip once: **start and destination station, departure time, weekdays**. Before every trip the system gets in touch by itself:
 
-- **15 min vorher** ein kurzer Check: „✓ Rad passt: 7 Räder an Sol, trocken, 14 °C, ca. 22 min“
-- eine **Warnung**, wenn etwas dagegen spricht: Regen, Wind oder Temperatur während der Fahrt über der **persönlichen Grenze**, keine Räder an der Startstation und im Umkreis, oder zu Fuß bzw. ÖPNV ist mindestens 5 min schneller. Mit Alternativen.
-- eine **Entwarnung**, sobald es wieder passt.
+- **30 min before departure** the recommendation starts; **15 min before** a short check: "✓ Bike is fine: 7 bikes at Sol, dry, 14 °C, approx. 22 min"
+- a **warning** if something speaks against the bike: rain, wind or temperature during the trip beyond the **personal limit**, no bikes at the start station or nearby, or walking/transit is at least 5 min faster. With alternatives.
+- an **all-clear** as soon as the bike is fine again.
 
-Die BiciMAD-App zeigt nur, wie viele Räder gerade wo stehen. MadridMove bewertet *deine* Fahrt zur *richtigen* Zeit und schweigt, solange alles passt.
+The BiciMAD app only shows how many bikes are where right now. MadridMove assesses *your* trip at the *right* time and stays quiet as long as everything is fine.
 
-Kursprojekt Distributed Systems for IoT (UPM), Gruppe 6: Tobias Kleinkauf, Gabriel Ninos. Umgesetzt mit **MQTT**, **Python** (Producer und Consumer) und **Node-RED** (Verarbeitung und Dashboard).
+Course project Distributed Systems for IoT (UPM), group 6: Tobias Kleinkauf, Gabriel Ninos. Built with **MQTT**, **Python** (producers and consumers) and **Node-RED** (processing and dashboard).
 
 ---
 
-## Architektur
+## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph APIs["Offene Daten"]
+  subgraph APIs["Open data"]
     GBFS[BiciMAD GBFS]
-    OM[Open-Meteo<br/>Vorhersage 15 min]
+    OM[Open-Meteo<br/>15-min forecast]
     ORS[openrouteservice<br/>optional]
-    EMT[EMT MobilityLabs<br/>Busankünfte, optional]
-    GTFS[EMT-Fahrplan<br/>GTFS]
+    EMT[EMT MobilityLabs<br/>bus arrivals, optional]
+    GTFS[EMT timetable<br/>GTFS]
   end
   subgraph PY["Python"]
-    COL[collector.py<br/>g6-col-bicimad<br/>g6-col-weather<br/>g6-col-fahrplan<br/>g6-col-emt]
-    CLI[client.py<br/>g6-client-&lt;nutzer&gt;]
+    COL[collector.py<br/>g6-col-bicimad<br/>g6-col-weather<br/>g6-col-timetable<br/>g6-col-emt]
+    CLI[client.py<br/>g6-client-&lt;user&gt;]
   end
   subgraph NR["Node-RED"]
-    PD[Profil-Dienst]
-    RE[Empfehlungsdienst]
+    PD[Profile service]
+    RE[Recommendation service]
     DB[Dashboard]
-    STA[Statistik-Dienst]
+    STA[Statistics service]
   end
-  BR((MQTT-Broker<br/>test.mosquitto.org))
+  BR((MQTT broker<br/>test.mosquitto.org))
 
   GBFS --> COL
   OM --> COL
   EMT --> COL
   GTFS --> COL
-  COL -- static, live, system --> BR
+  COL -- static, live, plan, system --> BR
   CLI -- routes, settings --> BR
   BR -- alerts --> CLI
   BR -- routes, stations --> PD
   ORS <--> PD
   PD -- profiles --> BR
-  BR -- profiles, routes, settings, live, system --> RE
+  BR -- profiles, routes, settings, live, plan, system --> RE
   RE -- reco, alerts --> BR
   BR -- reco, alerts, system --> DB
   DB -- routes, settings --> BR
@@ -53,174 +53,174 @@ flowchart LR
   STA -- stats --> BR
 ```
 
-**Python an den Rändern, Node-RED in der Mitte, MQTT verbindet alles.** Kein Dienst kennt einen anderen direkt: Jeder veröffentlicht und abonniert nur Topics.
+**Python at the edges, Node-RED in the middle, MQTT connects everything.** No service knows another one directly: each one only publishes and subscribes to topics.
 
-| Teil | Sprache | Aufgabe |
+| Part | Language | Task |
 |---|---|---|
-| `python/collector.py` | Python | **Producer**: Stationen, Räder (nur Änderungen), Wetter mit Vorhersage, Busankünfte (EMT, optional) |
-| `python/emt.py` | Python | Anmeldung bei EMT MobilityLabs, Token-Cache und automatische Erneuerung |
-| `python/gtfs_plan.py` | Python | Fahrplan der EMT-Busse (GTFS): beste direkte Busverbindung je Route |
-| `python/client.py` | Python | **Producer + Consumer**: Route und Einstellungen speichern, Meldungen empfangen |
-| Profil-Dienst | Node-RED | Route → Fahrzeit, Fußweg, ÖPNV-Schätzung (mit ORS genauer) |
-| Empfehlungsdienst | Node-RED | vorher „geplant“ (Vorschau), im Zeitfenster Rad ok oder Warnung und Meldungen |
-| Statistik-Dienst | Node-RED | Kennzahlen für die Diagramme: Pendlerwelle, Zentrum gegen Stadtrand, Wetter und Radnutzung |
-| Dashboard | Node-RED | Routenübersicht (Empfehlungen), Statistik (Diagramme), Routen verwalten (Formulare), Systemstatus, Demo |
+| `python/collector.py` | Python | **Producer**: stations, bikes (changes only), weather with forecast, bus timetable, bus arrivals (EMT, optional) |
+| `python/emt.py` | Python | Login at EMT MobilityLabs, token cache and automatic renewal |
+| `python/gtfs_plan.py` | Python | EMT bus timetable (GTFS): best direct bus connection per route |
+| `python/client.py` | Python | **Producer + consumer**: save routes and settings, receive notifications |
+| Profile service | Node-RED | Route → bike time, walking time, transit estimate (openrouteservice if a key is set) |
+| Recommendation service | Node-RED | "planned" (preview) before the time window; inside it bike ok or warning, plus notifications |
+| Statistics service | Node-RED | Key figures for the charts: commuter wave, centre vs outskirts, weather and bike use |
+| Dashboard | Node-RED | Route overview (recommendations), Statistics (charts), Manage routes (forms), System status, demo |
 
-## Topics (Präfix `upm-dsiot-g6/move`)
+## Topics (prefix `upm-dsiot-g6/move`)
 
-| Topic | Inhalt | QoS | Retained | Publisher |
+| Topic | Content | QoS | Retained | Publisher |
 |---|---|---|---|---|
-| `static/stations` | Stationsliste (id, name, lat, lon, capacity) | 1 | ja | Collector |
-| `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, nur bei Änderung, spätestens alle 10 min | 0 | ja | Collector |
-| `live/weather` | aktuelles Wetter + Vorhersage für 24 h in 15-min-Schritten | 0 | ja | Collector |
-| `live/emt/<nutzer>/<route>` | `{stop:{id,name,distM}, arrivals:[{line,destination,min}], ts}` nächste Busse am Startpunkt, alle 90 s | 0 | ja | Collector (nur mit EMT-Zugang) |
-| `plan/<nutzer>/<route>` | beste direkte Busverbindung laut Fahrplan zur nächsten Abfahrt: Linie, Ein-/Ausstieg, Abfahrt oder Takt, Fahrzeit, Gesamtzeit; `status` ok / nodirect / noservice | 1 | ja | Collector |
-| `stats/now` | freie Räder, leere/volle Stationen, Füllgrad Zentrum/Stadtrand | 0 | ja | Statistik-Dienst |
-| `stats/spatial` | je Station `[km bis Sol, Füllgrad %]` | 0 | ja | Statistik-Dienst |
-| `stats/history` | Verlauf: Pendlerwelle (5 min, 24 h), Radbewegungen + Wetter (10 min, 3 Tage) | 1 | ja | Statistik-Dienst |
-| `routes/<nutzer>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, leer = löschen | 1 | ja | Client / Dashboard |
-| `users/<nutzer>/settings` | `{rain: kein/leicht/egal, windMax, tempMin, tempMax}` | 1 | ja | Client / Dashboard |
-| `profiles/<nutzer>/<route>` | Fahrzeit, Höhenmeter, Fußweg, ÖPNV-Schätzung | 1 | ja | Profil-Dienst |
-| `reco/<nutzer>/<route>` | Status geplant / ok / warn / unbekannt mit Gründen und Alternativen | 1 | ja | Empfehlungsdienst |
-| `alerts/<nutzer>` | Vorab-Info, Warnung, Entwarnung (Text) | 1 | nein | Empfehlungsdienst |
-| `system/<dienst>` | `online` / `offline (beendet)` / `offline (Absturz)` | 1 | ja | Birth / Close / **Last Will** |
+| `static/stations` | station list (id, name, lat, lon, capacity) | 1 | yes | Collector |
+| `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, only on change, at the latest every 10 min | 0 | yes | Collector |
+| `live/weather` | current weather + 24 h forecast in 15-min steps | 0 | yes | Collector |
+| `live/emt/<user>/<route>` | `{stop:{id,name,distM}, arrivals:[{line,destination,min}], ts}` next buses near the start, every 90 s | 0 | yes | Collector (only with EMT access) |
+| `plan/<user>/<route>` | best direct bus connection by timetable for the next departure: line, boarding/alighting stop, departure or headway, ride time, total time; `status` ok / nodirect / noservice | 1 | yes | Collector |
+| `stats/now` | free bikes, empty/full stations, fill level centre/outskirts | 0 | yes | Statistics service |
+| `stats/spatial` | per station `[km to Sol, fill level %]` | 0 | yes | Statistics service |
+| `stats/history` | history: commuter wave (5 min, 24 h), bike movements + weather (10 min, 3 days) | 1 | yes | Statistics service |
+| `routes/<user>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, empty = delete | 1 | yes | Client / Dashboard |
+| `users/<user>/settings` | `{rain: none/light/any, windMax, tempMin, tempMax}` | 1 | yes | Client / Dashboard |
+| `profiles/<user>/<route>` | bike time, elevation, walking time, transit estimate | 1 | yes | Profile service |
+| `reco/<user>/<route>` | status planned / ok / warn / unknown with reasons and alternatives | 1 | yes | Recommendation service |
+| `alerts/<user>` | pre-departure info, warning, all-clear (text) | 1 | no | Recommendation service |
+| `system/<service>` | `online` / `offline (stopped)` / `offline (crashed)` | 1 | yes | Birth / close / **Last Will** |
 
-**Last-Will-Topics:** `system/bicimad`, `system/weather`, `system/fahrplan` und `system/emt` (Collector, je eigene Verbindung), `system/client-<nutzer>` (Client). Bricht eine Verbindung ohne DISCONNECT ab, veröffentlicht der Broker „offline (Absturz)“ (retained). Beim sauberen Beenden senden die Programme vorher „offline (beendet)“, beim Start „online“ (Birth).
+**Last Will topics:** `system/bicimad`, `system/weather`, `system/timetable` and `system/emt` (collector, one connection each), `system/client-<user>` (client). If a connection breaks without DISCONNECT, the broker publishes "offline (crashed)" (retained). On a clean shutdown the programs first send "offline (stopped)", on start "online" (birth message).
 
-## Zustellsemantik
+## Delivery semantics
 
-| Daten | QoS | Semantik | Begründung |
+| Data | QoS | Semantics | Reason |
 |---|---|---|---|
-| Live-Daten (Räder, Wetter) | 0 | **at-most-once** | Ein verlorener Wert ist unkritisch, der nächste kommt in ≤ 1 min. Retained sorgt dafür, dass neue Abonnenten trotzdem sofort den letzten Stand haben. |
-| Routen, Einstellungen, Profile, Status, Meldungen, Kommandos | 1 | **at-least-once** | Darf nicht verloren gehen. Duplikate sind harmlos: Routen und Status werden einfach überschrieben (idempotent), eine doppelte Meldung stört nicht. |
-| Meldungen an den Client | 1 + persistente Session | **at-least-once**, auch offline | Der Client verbindet sich mit fester ID und `clean_session=False`. Der Broker hebt Meldungen auf, solange der Client aus ist. |
-| – | 2 | exactly-once nicht nötig | QoS 2 kostet vier Nachrichten pro Zustellung und bringt hier nichts, weil keine Nachricht doppelt Schaden anrichtet. |
+| Live data (bikes, weather, bus arrivals) | 0 | **at-most-once** | A lost value does not matter, the next one arrives within ≤ 1 min. Retained messages make sure new subscribers still get the latest state at once. |
+| Routes, settings, profiles, timetable, status, notifications | 1 | **at-least-once** | Must not be lost. Duplicates are harmless: routes and status are simply overwritten (idempotent), a duplicate notification does no harm. |
+| Notifications to the client | 1 + persistent session | **at-least-once**, even offline | The client connects with a fixed ID and `clean_session=False`. The broker keeps notifications while the client is off. |
+| – | 2 | exactly-once not needed | QoS 2 costs four messages per delivery and brings nothing here, because no message causes harm when delivered twice. |
 
-## Logik
+## Logic
 
-Alle Werte stehen in Node-RED im Tab *⚙ Konfiguration* unter `reco`.
+All values are in Node-RED in the tab *⚙ Configuration* under `reco`.
 
-| Prüfung | Regel |
+| Check | Rule |
 |---|---|
-| Zeitfenster | Empfehlung erst 30 min vor der Abfahrt (`windowMin`). Vorher ist die Route **„geplant“**: Radfahrzeit, Wetter-Vorschau (sobald die Abfahrt in der 24-h-Vorhersage liegt), Busvergleich und „Empfehlung ab HH:MM“, aber kein Urteil und keine Räderzahl, weil Räder nur kurzfristig aussagekräftig sind. Würde das Wetter eine Grenze verletzen, steht das als Vorschau auf der Karte, ohne Meldung. |
-| Wetter | Vorhersage für die Fahrt (Abfahrt bis Ankunft). Warnung, wenn die persönliche Grenze überschritten wird: Regen (kein Regen: ab 0,1 mm/15 min, leichter Regen ok: ab 1,0 mm), Wind über `windMax`, Temperatur außerhalb `tempMin`–`tempMax`. |
-| Räder | Ab 3 Rädern ok. Weniger: Ausweichstation im Umkreis von 500 m mit ≥ 3 Rädern → nur Hinweis. Keine → Warnung. |
-| Alternativen | Zu Fuß oder ÖPNV mindestens 5 min schneller → Warnung. In jeder Warnung stehen beide Alternativen. |
-| ÖPNV | 1. **Fahrplan** (GTFS der EMT): beste direkte Buslinie von einer Haltestelle bis 600 m um den Start zu einer bis 600 m um das Ziel, zur geplanten Abfahrt. Zeit = Fußweg + Warten (bei Takt-Linien halber Takt) + Fahrzeit laut Plan + Fußweg. Fährt zu der Zeit kein direkter Bus (Wartezeit > 60 min), zählt ÖPNV nicht als Alternative. 2. **EMT live** (Abfahrt in ≤ 20 min): fährt die Fahrplan-Linie gerade an der Haltestelle, ersetzt die echte Wartezeit die geplante. 3. **Schätzung**, wenn es keine direkte Linie gibt (mit Umsteigen evtl. möglich): Wege + 4 min Warten + Strecke mit 18 km/h. |
-| Zielstation voll | kein Thema, das Rad kann daneben abgestellt werden |
-| Standardgrenzen | vorsichtig: kein Regen, Wind bis 25 km/h, 8–30 °C |
-| Meldungen | nur im Zeitfenster: Warnung bei Wechsel auf „warn“ (auch beim Eintritt ins Fenster), Vorab-Info 15 min vorher, Entwarnung nur nach einer Warnung |
-| Datenausfall | fehlen im Zeitfenster Stations- oder Wetterdaten, ist der Status „unbekannt“ und es gibt keine Meldung (sonst käme z. B. nach einem Absturz des Collectors eine falsche Entwarnung) |
+| Time window | Recommendation only 30 min before departure (`windowMin`). Before that the route is **"planned"**: bike time, weather preview (once the departure is within the 24 h forecast), bus comparison and "recommendation from HH:MM", but no verdict and no bike count, because bike availability is only meaningful short-term. If the forecast would break a limit, this appears as a preview on the card, without a notification. |
+| Weather | Forecast for the trip (departure to arrival). Warning if the personal limit is exceeded: rain ("no rain": from 0.1 mm/15 min, "light rain ok": from 1.0 mm), wind above `windMax`, temperature outside `tempMin`–`tempMax`. |
+| Bikes | 3 or more bikes: ok. Fewer: an alternative station within 500 m with ≥ 3 bikes → hint only. None → warning. |
+| Alternatives | Walking or transit at least 5 min faster → warning. Every warning lists both alternatives. |
+| Transit | 1. **Timetable** (EMT GTFS): best direct bus line from a stop within 600 m of the start to a stop within 600 m of the destination, at the planned departure. Time = walk + wait (half the headway for frequency-based lines) + ride time by timetable + walk. If no direct bus runs at that time (wait > 60 min), transit is not an alternative. 2. **EMT live** (departure in ≤ 20 min): if the timetable line is currently on its way to the stop, the real waiting time replaces the planned one. 3. **Estimate** if there is no direct line (maybe possible with a transfer): walking + 4 min wait + distance at 18 km/h. |
+| Full destination station | not an issue, the bike can be left next to it |
+| Default limits | cautious: no rain, wind up to 25 km/h, 8–30 °C |
+| Notifications | only inside the time window: warning on a change to "warn" (also on entering the window), pre-departure info 15 min before, all-clear only after a warning |
+| Missing data | if station or weather data are missing inside the window, the status is "unknown" and there is no notification (otherwise, e.g., a collector crash would cause a false all-clear) |
 
 ---
 
-## Einrichten und Starten
+## Setup and start
 
-Voraussetzungen: Node-RED (bei uns im Docker-Container) mit `@flowfuse/node-red-dashboard` (Menü → Palette verwalten), Python 3.9+. Unter Windows heißt Python `py`, unter macOS/Linux `python3`.
+Requirements: Node-RED with `@flowfuse/node-red-dashboard` (menu → Manage palette), Python 3.9+. On Windows Python is called `py`, on macOS/Linux `python3`.
 
-```powershell
-# 1. Einmalig (im Repo-Hauptordner)
-cd "C:\...\madrid-move"
-py -m pip install -r python\requirements.txt
-py configure.py 6 tobias            # Entwickeln: eigenes Präfix. Vor dem Commit: py configure.py 6
+```bash
+# 1. Once (in the repository root)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r python/requirements.txt
+python3 configure.py 6            # development: own prefix with python3 configure.py 6 <name>; before committing: python3 configure.py 6
 
-# 2. Node-RED: http://localhost:1880 -> Menü -> Import -> flows/madridmove.json
-#    -> "Ersetzen" bei Konflikten -> Deploy
+# 2. Node-RED (terminal 1), optionally with an openrouteservice key for real bike/walking times
+read -s "ORS_API_KEY?ORS key: "; export ORS_API_KEY; node-red      # zsh; without a key just: node-red
+#    http://localhost:1880 -> menu -> Import -> flows/madridmove.json -> "Replace" on conflicts -> Deploy
 
-# 3. Collector (Terminal 1, läuft dauerhaft)
-cd python
-py collector.py
+# 3. Collector (terminal 2, keeps running)
+cd python && python3 collector.py
 
-# 4. Client (Terminal 2)
-cd python
-py client.py empfangen tobias
+# 4. Client (terminal 3)
+cd python && python3 client.py listen gabriel
 ```
 
-Dashboard: http://localhost:1880/dashboard. Blockiert das Netz Port 1883, den Handy-Hotspot nehmen.
+Dashboard: http://localhost:1880/dashboard. If the network blocks port 1883, use the phone hotspot.
 
-### Fahrplan (automatisch)
+### Timetable (automatic)
 
-Der Collector lädt beim Start den Busfahrplan der EMT (GTFS, ca. 236 Linien) nach `python/gtfs/transitemt.zip` und erneuert ihn wöchentlich; ein Konto ist nicht nötig. Klappt der Download nicht (Firewall, Port 8443), die Datei im Browser von https://servicios.emtmadrid.es:8443/gtfs/transitemt.zip laden und dort ablegen. Test ohne MQTT: `py gtfs_plan.py test 40.4169 -3.7035 40.4437 -3.7276 08:30` (Start, Ziel, Uhrzeit).
+On start the collector downloads the EMT bus timetable (GTFS, about 236 lines) to `python/gtfs/transitemt.zip` and renews it weekly; no account is needed. If the download fails (firewall, port 8443), download the file in a browser from https://servicios.emtmadrid.es:8443/gtfs/transitemt.zip and put it there. Test without MQTT: `python3 gtfs_plan.py test 40.4169 -3.7035 40.4437 -3.7276 08:30` (start, destination, time).
 
-### EMT-Busankünfte (optional, dauerhaft)
+### EMT bus arrivals (optional)
 
-1. `python/secrets.env.example` kopieren, Kopie `python/secrets.env` nennen.
-2. Dort `EMT_EMAIL=` und `EMT_PASSWORD=` (Konto von mobilitylabs.emtmadrid.es) eintragen. Alternativ `EMT_CLIENT_ID=` und `EMT_PASSKEY=`.
-3. Test: `cd python` und `py emt.py test` → „OK: Token vorhanden, noch 24.0 h gültig“.
-4. `py collector.py` neu starten → im Log „EMT: angemeldet …“, im Dashboard ist „EMT-Bus“ grün.
+1. Copy `python/secrets.env.example` and name the copy `python/secrets.env`.
+2. Fill in `EMT_EMAIL=` and `EMT_PASSWORD=` (account from mobilitylabs.emtmadrid.es). Alternatively `EMT_CLIENT_ID=` and `EMT_PASSKEY=`.
+3. Test: `cd python` and `python3 emt.py test` → "OK: token available, valid for 24.0 h".
+4. Restart `python3 collector.py` → log shows "EMT: logged in …", the dashboard shows "EMT bus" in green.
 
-`secrets.env` und der Token-Cache `.emt_token.json` stehen in `.gitignore` und landen nie im Repo. Das Passwort bleibt auf dem Rechner, der den Collector ausführt; über MQTT gehen nur Busankünfte. Der Token (ca. 24 h gültig) wird 30 min vor Ablauf und bei Ablehnung (Code 80) automatisch neu geholt. Ohne `secrets.env` läuft alles wie bisher mit der ÖPNV-Schätzung.
+`secrets.env` and the token cache `.emt_token.json` are listed in `.gitignore` and never end up in the repo. The password stays on the machine running the collector; only bus arrivals go over MQTT. The token (valid about 24 h) is renewed automatically 30 min before it expires and when it is rejected (code 80). Without `secrets.env` everything runs with the timetable only.
 
 ### Client
 
 ```bash
-python3 client.py stationen sol                         # Stationsnummern finden
-python3 client.py route-anlegen gabriel "Zur Uni" --start 1 --ziel 6 --zeit 08:30 --tage 1-5
-python3 client.py einstellungen gabriel --regen leicht --wind 35 --temp 5 32
-python3 client.py routen gabriel                        # Routen + aktueller Status
-python3 client.py empfangen gabriel                     # Meldungen (persistente Session)
-python3 client.py route-loeschen gabriel zur-uni
+python3 client.py stations sol                                   # find station numbers
+python3 client.py add-route gabriel "To university" --from 1 --to 6 --time 08:30 --days 1-5
+python3 client.py settings gabriel --rain light --wind 35 --temp 5 32
+python3 client.py routes gabriel                                 # routes + current status
+python3 client.py listen gabriel                                 # notifications (persistent session)
+python3 client.py delete-route gabriel to-university
 ```
 
-## Demo (ca. 4 min, nur echte Daten)
+## Demo (about 4 min, real data only)
 
-Bildschirm: links das Dashboard (*Routenübersicht*), rechts ein Terminal mit `python3 client.py empfangen demo` und daneben ein Mitleser (`mosquitto_sub` oder MQTT Explorer). Im Dashboard gibt es keine Popups: Das Dashboard zeigt den Zustand, die Meldungen gehen an den Client.
+Screen: on the left the dashboard (*Route overview*), on the right a terminal with `python3 client.py listen demo` and next to it a subscriber showing the raw messages (`mosquitto_sub` or MQTT Explorer). The dashboard has no pop-ups: it shows the state, the notifications go to the client.
 
-1. **Route anlegen**: auf *Routen verwalten* als Nutzer `demo` eine Route mit Abfahrt in ca. 12 min anlegen (oder auf *System & Demo* „Demo-Route anlegen“: Sol → Ciudad Universitaria, Abfahrt in 14 min, Standardgrenzen). Der Mitleser zeigt `routes/demo/…`, die Karte erscheint, der Client meldet „gespeichert … ✓ Rad passt“ und kurz danach die Vorab-Info.
-2. **Personalisierung mit echtem Wetter**: unter *Meine Einstellungen* die Mindesttemperatur über die aktuelle Temperatur setzen → **Warnung** mit Alternativen (Bus laut Fahrplan, zu Fuß). Wieder zurücksetzen → **Entwarnung**.
-3. **Last Will**: Collector-Fenster hart schließen (oder `kill -9`) → nach ca. 45 s „offline (Absturz)“, auf *Statistik* und *System & Demo* erscheint ein Hinweis.
-4. Optional **persistente Session**: Client beenden, Einstellung ändern, Client neu starten → „(Session fortgesetzt)“, die verpasste Meldung kommt nach.
+1. **Add a route**: on *Manage routes*, as user `demo`, add a route with departure in about 12 min (or on *System & demo* "Create demo route": Sol → Ciudad Universitaria, departure in 14 min, default limits). The subscriber shows `routes/demo/…`, the card appears, the client reports "saved … ✓ Bike is fine" and shortly afterwards the pre-departure info.
+2. **Personal limits with real weather**: under *My settings* set the minimum temperature above the current temperature → **warning** with alternatives (bus by timetable, walking). Set it back → **all-clear**.
+3. **Last Will**: close the collector window hard (or `kill -9`) → after about 45 s "offline (crashed)", a hint appears on *Statistics* and *System & demo*; the route card switches to "? Data missing" without a false all-clear.
+4. Optional **persistent session**: stop the client, change a setting, restart the client → "(session resumed)", the missed notification is delivered.
 
-## Dashboard-Diagramme (Seite *Statistik*)
+## Dashboard charts (page *Statistics*)
 
-| Diagramm | Was es zeigt | Daten |
+| Chart | What it shows | Data |
 |---|---|---|
-| Madrid jetzt | Wetter, freie Räder, leere/volle Stationen, Füllgrad, Radbewegungen, Status der Datenquellen (BiciMAD, Wetter, Fahrplan, EMT) | `stats/now`, `live/weather`, `system/+` |
-| Pendlerwelle | Füllgrad (Räder ÷ Stellplätze) im Zentrum (≤ 3 km um Sol) und am Stadtrand über 24 h | ein Punkt alle 5 min |
-| Zentrum gegen Stadtrand | jede Station: Entfernung zur Puerta del Sol gegen Füllgrad | jede Minute |
-| Wetter und Radnutzung | Radbewegungen je 10 min (blau = Regen) und darunter Temperatur und Wind | alle 10 min, 3 Tage |
+| Madrid now | weather, free bikes, empty/full stations, fill level, bike movements, status of the data sources (BiciMAD, weather, timetable, EMT) | `stats/now`, `live/weather`, `system/+` |
+| Commuter wave | fill level (bikes ÷ docks) in the centre (≤ 3 km around Sol) and in the outskirts over 24 h | one point every 5 min |
+| Centre vs outskirts | every station: distance to Puerta del Sol vs fill level | every minute |
+| Weather and bike use | bike movements per 10 min (blue = rain) and below temperature and wind | every 10 min, 3 days |
 
-Der Verlauf liegt retained auf `stats/history` und wird nach einem Neustart von Node-RED übernommen. Die Diagramme füllen sich also nur, solange Collector und Node-RED laufen: für die Präsentation am besten ein paar Stunden vorher starten.
+The history is retained on `stats/history` and taken over after a Node-RED restart. The charts only fill while the collector and Node-RED are running: for the presentation, start them a few hours before.
 
-## Tests (für den Bericht)
+## Tests (for the report)
 
-| # | Test | Erwartet |
+| # | Test | Expected |
 |---|---|---|
-| 1 | Dashboard neu laden | sofort gefüllt (retained) |
-| 2 | Route mit Abfahrt in 16 min anlegen | nach ca. 1 min Vorab-Info |
-| 3 | Route mit Abfahrt in 2 h, Mindesttemperatur über aktuelle Temperatur setzen | Karte bleibt „geplant“ mit Vorschau „laut Vorhersage …“, **keine** Meldung; 30 min vor der Abfahrt kommt die Warnung |
-| 4 | Collector mit Strg+C beenden | `system/bicimad` = „offline (beendet)“ |
-| 5 | Collector hart beenden (`kill -9 <PID>`) | „offline (Absturz)“ (Last Will) |
-| 6 | Client beenden, Einstellung ändern (Warnung auslösen), Client neu starten | „Session fortgesetzt“, verpasste Meldungen kommen nach |
-| 7 | Zwei Nutzer mit derselben Route, nur einer mit enger Temperaturgrenze | Warnung nur für diesen Nutzer |
-| 8 | Collector beenden und 15 min warten | Status „? Daten fehlen“, keine Meldung |
+| 1 | Reload the dashboard | filled at once (retained) |
+| 2 | Add a route with departure in 16 min | pre-departure info after about 1 min |
+| 3 | Route with departure in 2 h, minimum temperature above the current temperature | card stays "planned" with the preview "forecast: …", **no** notification; the warning comes 30 min before departure |
+| 4 | Stop the collector with Ctrl+C | `system/bicimad` = "offline (stopped)" |
+| 5 | Kill the collector (`kill -9 <PID>`) | "offline (crashed)" (Last Will) |
+| 6 | Stop the client, change a setting (trigger a warning), restart the client | "session resumed", missed notifications are delivered |
+| 7 | Two users with the same route, only one with a tight temperature limit | warning only for that user |
+| 8 | Stop the collector and wait 15 min | status "? Data missing", no notification |
 
-Alles mitlesen: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v`
+Watch everything: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' -v`
 
-## Grenzen und Future Work
+## Limitations and future work
 
-- ÖPNV: nur direkte Busverbindungen laut Fahrplan, keine Umstiege, keine Metro/Cercanías. Ohne direkte Linie bleibt es bei der Schätzung. Ausbau: Routing mit Umstiegen (z. B. Transitous) und die GTFS-Fahrpläne von Metro und Cercanías.
-- Öffentlicher Broker ohne Anmeldung und Verschlüsselung: Jeder kann mitlesen und Routen ändern. In echt: eigener Broker mit TLS und Zugriffsrechten pro Nutzer (ACLs).
-- Nutzer = Kurzname, keine Konten. Das Dashboard ist eine gemeinsame Übersicht; der persönliche Kanal ist der Client.
-- Wetter für einen Punkt (Sol), nicht entlang der Strecke.
+- Transit: only direct bus connections by timetable, no transfers, no Metro/Cercanías. Without a direct line the estimate is used. Next step: routing with transfers (e.g. Transitous) and the GTFS timetables of Metro and Cercanías.
+- Public broker without authentication or encryption: anyone can read along and change routes. In production: own broker with TLS and per-user access rights (ACLs).
+- User = short name, no accounts. The dashboard is a shared overview; the personal channel is the client.
+- Weather for one point (Sol), not along the route.
 
-## Ordnerstruktur
+## Folder structure
 
 ```
-flows/      madridmove.json (alle 5 Tabs: Konfiguration, Profil-Dienst, Empfehlung, Dashboard, Statistik)
+flows/      madridmove.json (all 5 tabs: Configuration, Profile service, Recommendation, Dashboard, Statistics)
 python/     collector.py, client.py, emt.py, gtfs_plan.py, config.py, requirements.txt, secrets.env.example
-            (secrets.env, .emt_token.json und gtfs/: nur lokal, git-ignoriert)
+            (secrets.env, .emt_token.json and gtfs/: local only, git-ignored)
+report/     architecture diagram
 configure.py
 ```
 
-## Änderungen an den Flows ins Repo übernehmen
+## Saving flow changes to the repo
 
-Alle Tabs liegen in **einer** Datei. Nach Änderungen in Node-RED: Menü → *Export* → *Alle Flows* → herunterladen und `flows/madridmove.json` damit überschreiben, dann committen. Weil alles in einer Datei steht, sollte immer nur eine Person gleichzeitig an den Flows arbeiten (vorher `git pull`, danach sofort committen und pushen), sonst gibt es Merge-Konflikte.
+All tabs are in **one** file. After changes in Node-RED: menu → *Export* → *All flows* → download and overwrite `flows/madridmove.json`, then commit. Because everything is in one file, only one person should work on the flows at a time (`git pull` first, commit and push right after), otherwise there will be merge conflicts.
 
-## Datenquellen und Lizenzen
+## Data sources and licences
 
 - BiciMAD GBFS (EMT Madrid / Ayuntamiento de Madrid, datos.gob.es)
 - Open-Meteo, CC BY 4.0
-- openrouteservice (HeiGIT), Kartendaten © OpenStreetMap-Mitwirkende (ODbL)
-- EMT Madrid MobilityLabs (Busankünfte, Konto erforderlich)
-- EMT GTFS (Busfahrplan), Portal de datos abiertos EMT / datos.madrid.es
+- openrouteservice (HeiGIT), map data © OpenStreetMap contributors (ODbL)
+- EMT Madrid MobilityLabs (bus arrivals, account required)
+- EMT GTFS (bus timetable), EMT open data portal / datos.madrid.es

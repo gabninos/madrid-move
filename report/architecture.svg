@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180" font-family="Segoe UI, Helvetica, Arial, sans-serif" xmlns:c2pa="http://c2pa.org/manifest">
+<defs><marker id="mg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f6f50"/></marker><marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d4f91"/></marker><marker id="mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8a939b"/></marker></defs>
+<rect width="1800" height="1180" fill="#f6f7f8"/>
+<text x="40" y="52" font-size="28" font-weight="bold" fill="#1f2933" text-anchor="start">MadridMove – System architecture</text>
+<text x="40" y="80" font-size="15" font-weight="normal" fill="#5b6670" text-anchor="start">Python at the edges, Node-RED in the middle, MQTT connects everything. No service knows another one directly – they only communicate via topics.</text>
+<text x="40" y="122" font-size="12" font-weight="bold" fill="#5b6670" text-anchor="start" letter-spacing="1.2">OPEN DATA SOURCES (HTTP)</text>
+<text x="330" y="122" font-size="12" font-weight="bold" fill="#5b6670" text-anchor="start" letter-spacing="1.2">PYTHON</text>
+<text x="690" y="122" font-size="12" font-weight="bold" fill="#5b6670" text-anchor="start" letter-spacing="1.2">MQTT BROKER</text>
+<text x="1120" y="122" font-size="12" font-weight="bold" fill="#5b6670" text-anchor="start" letter-spacing="1.2">NODE-RED</text>
+<text x="1560" y="122" font-size="12" font-weight="bold" fill="#5b6670" text-anchor="start" letter-spacing="1.2">USERS &amp; EXTERNAL</text>
+<rect x="40" y="140" width="250" height="78" rx="10" fill="#ffffff" stroke="#dde1e4" stroke-width="1.5"/>
+<text x="58" y="175" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="start">BiciMAD GBFS</text>
+<text x="58" y="197" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">stations &amp; bikes (EMT)</text>
+<line x1="292" y1="175" x2="330" y2="175" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)"/>
+<rect x="40" y="250" width="250" height="78" rx="10" fill="#ffffff" stroke="#dde1e4" stroke-width="1.5"/>
+<text x="58" y="285" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="start">Open-Meteo</text>
+<text x="58" y="307" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">weather + 15-min forecast</text>
+<line x1="292" y1="285" x2="330" y2="285" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)"/>
+<rect x="40" y="360" width="250" height="78" rx="10" fill="#ffffff" stroke="#dde1e4" stroke-width="1.5"/>
+<text x="58" y="395" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="start">EMT GTFS timetable</text>
+<text x="58" y="417" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">bus timetable, weekly ZIP</text>
+<line x1="292" y1="395" x2="330" y2="395" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)"/>
+<rect x="40" y="470" width="250" height="78" rx="10" fill="#ffffff" stroke="#dde1e4" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="58" y="505" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="start">EMT MobilityLabs</text>
+<text x="58" y="527" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">live bus arrivals (optional,</text>
+<text x="58" y="543" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">account needed)</text>
+<line x1="292" y1="505" x2="330" y2="505" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)"/>
+<rect x="330" y="140" width="300" height="560" rx="10" fill="#ffffff" stroke="#1f6f50" stroke-width="2"/>
+<text x="348" y="170" font-size="20" font-weight="bold" fill="#1f2933" text-anchor="start">collector.py</text>
+<text x="348" y="190" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">Producer · 4 MQTT connections</text>
+<rect x="346" y="205" width="268" height="50" rx="8" fill="#eef6f1" stroke="#cfe3d8" stroke-width="1"/>
+<text x="358" y="226" font-size="12.5" font-weight="bold" fill="#1f2933" text-anchor="start">g6-col-bicimad</text>
+<text x="358" y="244" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">stations hourly, bikes every minute</text>
+<rect x="346" y="263" width="268" height="50" rx="8" fill="#eef6f1" stroke="#cfe3d8" stroke-width="1"/>
+<text x="358" y="284" font-size="12.5" font-weight="bold" fill="#1f2933" text-anchor="start">g6-col-weather</text>
+<text x="358" y="302" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">weather + forecast every 10 min</text>
+<rect x="346" y="321" width="268" height="50" rx="8" fill="#eef6f1" stroke="#cfe3d8" stroke-width="1"/>
+<text x="358" y="342" font-size="12.5" font-weight="bold" fill="#1f2933" text-anchor="start">g6-col-timetable</text>
+<text x="358" y="360" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">best direct bus per route (GTFS)</text>
+<rect x="346" y="379" width="268" height="50" rx="8" fill="#eef6f1" stroke="#cfe3d8" stroke-width="1"/>
+<text x="358" y="400" font-size="12.5" font-weight="bold" fill="#1f2933" text-anchor="start">g6-col-emt</text>
+<text x="358" y="418" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">bus arrivals every 90 s (optional)</text>
+<text x="348" y="455" font-size="12" font-weight="bold" fill="#1f6f50" text-anchor="start">publishes</text>
+<text x="348" y="472" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">static/stations</text>
+<text x="348" y="487" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">live/bicimad/&lt;station&gt;  (changes only)</text>
+<text x="348" y="502" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">live/weather</text>
+<text x="348" y="517" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">live/emt/&lt;user&gt;/&lt;route&gt;</text>
+<text x="348" y="532" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">plan/&lt;user&gt;/&lt;route&gt;</text>
+<text x="348" y="547" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">system/&lt;source&gt;</text>
+<text x="348" y="572" font-size="12" font-weight="bold" fill="#1d4f91" text-anchor="start">subscribes</text>
+<text x="348" y="589" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">profiles/+/+  (start/end points)</text>
+<text x="348" y="604" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">routes/+/+  (departure times)</text>
+<text x="348" y="640" font-size="12" font-weight="bold" fill="#b23a1a" text-anchor="start">Birth · Close · Last Will per connection</text>
+<text x="348" y="662" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">GBFS: report by exception</text>
+<text x="348" y="678" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">(only changed stations are sent)</text>
+<rect x="330" y="760" width="300" height="230" rx="10" fill="#ffffff" stroke="#1f6f50" stroke-width="2"/>
+<text x="348" y="790" font-size="20" font-weight="bold" fill="#1f2933" text-anchor="start">client.py</text>
+<text x="348" y="810" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">Producer + consumer (terminal)</text>
+<text x="348" y="836" font-size="12.5" font-weight="bold" fill="#1f2933" text-anchor="start">g6-client-&lt;user&gt;</text>
+<text x="348" y="853" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">persistent session</text>
+<text x="348" y="868" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">(clean_session=False)</text>
+<text x="348" y="893" font-size="12" font-weight="bold" fill="#1f6f50" text-anchor="start">publishes</text>
+<text x="348" y="909" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">routes/&lt;user&gt;/&lt;route&gt;</text>
+<text x="348" y="924" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">users/&lt;user&gt;/settings</text>
+<text x="470" y="893" font-size="12" font-weight="bold" fill="#1d4f91" text-anchor="start">subscribes</text>
+<text x="470" y="909" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">alerts/&lt;user&gt;</text>
+<text x="348" y="970" font-size="12" font-weight="bold" fill="#b23a1a" text-anchor="start">Last Will → system/client-&lt;user&gt;</text>
+<rect x="690" y="140" width="370" height="850" rx="14" fill="#fffcf1" stroke="#e2b93b" stroke-width="2.5"/>
+<text x="875.0" y="172" font-size="20" font-weight="bold" fill="#1f2933" text-anchor="middle">MQTT broker</text>
+<text x="875.0" y="194" font-size="12.5" font-weight="normal" fill="#5b6670" text-anchor="middle">test.mosquitto.org : 1883</text>
+<text x="875.0" y="212" font-size="12.5" font-weight="normal" fill="#5b6670" text-anchor="middle">prefix upm-dsiot-g6/move</text>
+<text x="706" y="240" font-size="11.5" font-weight="bold" fill="#5b6670" text-anchor="start">Topic</text>
+<text x="958" y="240" font-size="11.5" font-weight="bold" fill="#5b6670" text-anchor="middle">QoS</text>
+<text x="1015" y="240" font-size="11.5" font-weight="bold" fill="#5b6670" text-anchor="middle">Retained</text>
+<rect x="700" y="254" width="350" height="155" rx="8" fill="#ffffff" stroke="#efdca6" stroke-width="1"/>
+<text x="712" y="273" font-size="11.5" font-weight="bold" fill="#9a6b00" text-anchor="start">Data</text>
+<text x="712" y="296" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">static/stations</text>
+<text x="958" y="296" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="296" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="321" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">live/bicimad/&lt;station&gt;</text>
+<text x="958" y="321" font-size="12.5" font-weight="bold" fill="#5b6670" text-anchor="middle">0</text>
+<text x="1015" y="321" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="346" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">live/weather</text>
+<text x="958" y="346" font-size="12.5" font-weight="bold" fill="#5b6670" text-anchor="middle">0</text>
+<text x="1015" y="346" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="371" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">live/emt/&lt;user&gt;/&lt;route&gt;</text>
+<text x="958" y="371" font-size="12.5" font-weight="bold" fill="#5b6670" text-anchor="middle">0</text>
+<text x="1015" y="371" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="396" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">plan/&lt;user&gt;/&lt;route&gt;</text>
+<text x="958" y="396" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="396" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<rect x="700" y="421" width="350" height="80" rx="8" fill="#ffffff" stroke="#efdca6" stroke-width="1"/>
+<text x="712" y="440" font-size="11.5" font-weight="bold" fill="#9a6b00" text-anchor="start">User input</text>
+<text x="712" y="463" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">routes/&lt;user&gt;/&lt;route&gt;</text>
+<text x="958" y="463" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="463" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="488" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">users/&lt;user&gt;/settings</text>
+<text x="958" y="488" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="488" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<rect x="700" y="513" width="350" height="130" rx="8" fill="#ffffff" stroke="#efdca6" stroke-width="1"/>
+<text x="712" y="532" font-size="11.5" font-weight="bold" fill="#9a6b00" text-anchor="start">Results</text>
+<text x="712" y="555" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">profiles/&lt;user&gt;/&lt;route&gt;</text>
+<text x="958" y="555" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="555" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="580" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">reco/&lt;user&gt;/&lt;route&gt;</text>
+<text x="958" y="580" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="580" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="712" y="605" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">alerts/&lt;user&gt;</text>
+<text x="958" y="605" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="605" font-size="12.5" font-weight="normal" fill="#b0b7bd" text-anchor="middle">–</text>
+<text x="712" y="630" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">stats/now|spatial|history</text>
+<text x="958" y="630" font-size="12.5" font-weight="bold" fill="#5b6670" text-anchor="middle">0/1</text>
+<text x="1015" y="630" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<rect x="700" y="655" width="350" height="55" rx="8" fill="#ffffff" stroke="#efdca6" stroke-width="1"/>
+<text x="712" y="674" font-size="11.5" font-weight="bold" fill="#9a6b00" text-anchor="start">Operations</text>
+<text x="712" y="697" font-size="12.5" font-weight="normal" fill="#1f2933" text-anchor="start" font-family="Consolas, Menlo, monospace">system/&lt;service&gt;</text>
+<text x="958" y="697" font-size="12.5" font-weight="bold" fill="#1d4f91" text-anchor="middle">1</text>
+<text x="1015" y="697" font-size="12.5" font-weight="normal" fill="#1f6f50" text-anchor="middle">●</text>
+<text x="706" y="950" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">QoS 0 = at-most-once · QoS 1 = at-least-once</text>
+<text x="706" y="968" font-size="11.5" font-weight="normal" fill="#5b6670" text-anchor="start">● retained: the broker keeps the latest value</text>
+<line x1="632" y1="323" x2="688" y2="323" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<line x1="688" y1="337" x2="632" y2="337" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<line x1="632" y1="868" x2="688" y2="868" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<line x1="688" y1="882" x2="632" y2="882" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<rect x="1105" y="140" width="395" height="850" rx="14" fill="none" stroke="#9fb6d6" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="1120" y="162" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">one MQTT connection: g6-app</text>
+<rect x="1120" y="175" width="365" height="175" rx="10" fill="#ffffff" stroke="#1d4f91" stroke-width="2"/>
+<text x="1136" y="205" font-size="18" font-weight="bold" fill="#1f2933" text-anchor="start">Profile service</text>
+<text x="1136" y="225" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">bike time, elevation, walking, transit estimate</text>
+<text x="1136" y="249" font-size="12" font-weight="bold" fill="#1d4f91" text-anchor="start">subscribes</text>
+<text x="1136" y="265" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">routes/+/+, static/stations, profiles/+/+</text>
+<text x="1136" y="282" font-size="12" font-weight="bold" fill="#1f6f50" text-anchor="start">publishes</text>
+<text x="1136" y="298" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">profiles/&lt;user&gt;/&lt;route&gt;</text>
+<rect x="1120" y="365" width="365" height="250" rx="10" fill="#ffffff" stroke="#1d4f91" stroke-width="2"/>
+<text x="1136" y="395" font-size="18" font-weight="bold" fill="#1f2933" text-anchor="start">Recommendation service</text>
+<text x="1136" y="415" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">planned → from 30 min before: bike ok / warning / unknown</text>
+<text x="1136" y="439" font-size="12" font-weight="bold" fill="#1d4f91" text-anchor="start">subscribes</text>
+<text x="1136" y="455" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">routes/+/+, users/+/settings, profiles/+/+</text>
+<text x="1136" y="470" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">live/bicimad/+, live/weather, live/emt/+/+</text>
+<text x="1136" y="485" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">plan/+/+, system/+, static/stations</text>
+<text x="1136" y="502" font-size="12" font-weight="bold" fill="#1f6f50" text-anchor="start">publishes</text>
+<text x="1136" y="518" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">reco/&lt;user&gt;/&lt;route&gt;</text>
+<text x="1136" y="533" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">alerts/&lt;user&gt;  (only in the time window)</text>
+<rect x="1120" y="630" width="365" height="165" rx="10" fill="#ffffff" stroke="#1d4f91" stroke-width="2"/>
+<text x="1136" y="660" font-size="18" font-weight="bold" fill="#1f2933" text-anchor="start">Statistics service</text>
+<text x="1136" y="680" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">commuter wave, centre vs outskirts, weather &amp; use</text>
+<text x="1136" y="704" font-size="12" font-weight="bold" fill="#1d4f91" text-anchor="start">subscribes</text>
+<text x="1136" y="720" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">static/stations, live/bicimad/+, live/weather</text>
+<text x="1136" y="737" font-size="12" font-weight="bold" fill="#1f6f50" text-anchor="start">publishes</text>
+<text x="1136" y="753" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">stats/now, stats/spatial, stats/history</text>
+<rect x="1120" y="810" width="365" height="170" rx="10" fill="#ffffff" stroke="#1d4f91" stroke-width="2"/>
+<text x="1136" y="840" font-size="18" font-weight="bold" fill="#1f2933" text-anchor="start">Dashboard</text>
+<text x="1136" y="860" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">4 pages: route overview, statistics, manage routes, system</text>
+<text x="1136" y="884" font-size="12" font-weight="bold" fill="#1d4f91" text-anchor="start">subscribes</text>
+<text x="1136" y="900" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">reco/+/+, routes/+/+, system/+, stats/+, live/weather</text>
+<text x="1136" y="917" font-size="12" font-weight="bold" fill="#1f6f50" text-anchor="start">publishes</text>
+<text x="1136" y="933" font-size="11.5" font-weight="normal" fill="#1f2933" text-anchor="start">routes/…, users/…/settings</text>
+<line x1="1118" y1="255" x2="1062" y2="255" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<line x1="1062" y1="269" x2="1118" y2="269" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<line x1="1118" y1="483" x2="1062" y2="483" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<line x1="1062" y1="497" x2="1118" y2="497" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<line x1="1118" y1="705" x2="1062" y2="705" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<line x1="1062" y1="719" x2="1118" y2="719" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<line x1="1118" y1="888" x2="1062" y2="888" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<line x1="1062" y1="902" x2="1118" y2="902" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<rect x="1560" y="180" width="200" height="100" rx="10" fill="#ffffff" stroke="#cfd5da" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="1576" y="210" font-size="14" font-weight="bold" fill="#1f2933" text-anchor="start">openrouteservice</text>
+<text x="1576" y="230" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">optional, with key</text>
+<text x="1576" y="246" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">real bike/walking times</text>
+<line x1="1487" y1="240" x2="1558" y2="240" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)" marker-start="url(#mk)"/>
+<text x="1500" y="232" font-size="11" font-weight="bold" fill="#8a939b" text-anchor="start">HTTP</text>
+<rect x="1560" y="845" width="200" height="100" rx="10" fill="#ffffff" stroke="#cfd5da" stroke-width="1.5"/>
+<text x="1576" y="875" font-size="14" font-weight="bold" fill="#1f2933" text-anchor="start">Browser</text>
+<text x="1576" y="895" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">localhost:1880/dashboard</text>
+<text x="1576" y="911" font-size="12" font-weight="normal" fill="#5b6670" text-anchor="start">Socket.IO</text>
+<line x1="1487" y1="895" x2="1558" y2="895" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)" marker-start="url(#mk)"/>
+<rect x="40" y="1035" width="1720" height="110" rx="10" fill="#ffffff" stroke="#dde1e4" stroke-width="1.5"/>
+<line x1="60" y1="1070" x2="120" y2="1070" stroke="#1f6f50" stroke-width="2" marker-end="url(#mg)"/>
+<text x="132" y="1075" font-size="13" font-weight="normal" fill="#1f2933" text-anchor="start">publish (to the broker)</text>
+<line x1="330" y1="1070" x2="390" y2="1070" stroke="#1d4f91" stroke-width="2" marker-end="url(#mb)"/>
+<text x="402" y="1075" font-size="13" font-weight="normal" fill="#1f2933" text-anchor="start">subscribe (from the broker)</text>
+<line x1="620" y1="1070" x2="680" y2="1070" stroke="#8a939b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#mk)"/>
+<text x="692" y="1075" font-size="13" font-weight="normal" fill="#1f2933" text-anchor="start">HTTP request / web</text>
+<text x="880" y="1075" font-size="13" font-weight="normal" fill="#b23a1a" text-anchor="start">Last Will: the broker publishes "offline (crashed)" if a connection drops without DISCONNECT</text>
+<text x="60" y="1105" font-size="12.5" font-weight="normal" fill="#5b6670" text-anchor="start">The recommendation is only given 30 min before departure; before that the route is "planned" (bike time, weather preview, bus comparison).</text>
+<text x="60" y="1125" font-size="12.5" font-weight="normal" fill="#5b6670" text-anchor="start">Transit time: EMT timetable (direct lines) → EMT live arrivals when available → estimate if there is no direct line.</text>
+<metadata><c2pa:manifest>AAAWgmp1bWIAAAAeanVtZGMycGEAEQAQgAAAqgA4m3EDYzJwYQAAABZcanVtYgAAAEdqdW1kYzJtYQARABCAAACqADibcQN1cm46YzJwYTozNGY4M2JiZC1lYzM2LTQxNTAtYTVmYS1kNmMwNzUwZDZiMzgAAAADl2p1bWIAAAApanVtZGMyYXMAEQAQgAAAqgA4m3EDYzJwYS5hc3NlcnRpb25zAAAAALxqdW1iAAAARGp1bWRjYm9yABEAEIAAAKoAOJtxE2MycGEuaW5ncmVkaWVudC52MwAAAAAYYzJzaJJhzD85gFB9Pbeo+wRHbTgAAABwY2JvcqNpZGM6Zm9ybWF0bWltYWdlL3N2Zyt4bWxqaW5zdGFuY2VJRHgseG1wOmlpZDpiNzUyMzFjNy03MWJjLTQ0YWUtOTEzMS05Y2YyMWY2YTlhNDFscmVsYXRpb25zaGlwaHBhcmVudE9mAAAB4mp1bWIAAABBanVtZGNib3IAEQAQgAAAqgA4m3ETYzJwYS5hY3Rpb25zLnYyAAAAABhjMnNofh+J+UL02f47LWozQP+n9gAAAZljYm9yomdhY3Rpb25zgqJmYWN0aW9ua2MycGEub3BlbmVkanBhcmFtZXRlcnOha2luZ3JlZGllbnRzgaJjdXJseC1zZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmluZ3JlZGllbnQudjNkaGFzaFggSO0hFCJ/pQjoEqydknGBVgyNm7yBqabZYIuKGln3b62kZmFjdGlvbngdY29tLmFudGhyb3BpYy5jbGF1ZGUucHJvdmlkZWRqcGFyYW1ldGVyc6F4H2NvbS5hbnRocm9waWMub3JpZ2luLWNvbmZpZGVuY2VndW5rbm93bmtkZXNjcmlwdGlvbnhmQ2xhdWRlIHByb3ZpZGVkIHRoaXMgZmlsZSBhdCB0aGUgcmVxdWVzdCBvZiBhIHVzZXIgYW5kIG1heSBoYXZlIGNyZWF0ZWQgb3IgbW9kaWZpZWQgdGhlIGZpbGUgY29udGVudHMubXNvZnR3YXJlQWdlbnShZG5hbWVmQ2xhdWRlcmFsbEFjdGlvbnNJbmNsdWRlZPUAAADIanVtYgAAAEBqdW1kY2JvcgARABCAAACqADibcRNjMnBhLmhhc2guZGF0YQAAAAAYYzJzaJwspzzvJJZ7ZvoPQCtaUs8AAACAY2JvcqVjYWxnZnNoYTI1NmNwYWRMAAAAAAAAAAAAAAAAZGhhc2hYIEYvUwl/20rPrCY2QBJ6C+LoHJJoz2cjkJwGaW9kEmk2ZG5hbWVuanVtYmYgbWFuaWZlc3RqZXhjbHVzaW9uc4GiZXN0YXJ0GVvbZmxlbmd0aBkeBAAAAj5qdW1iAAAAJ2p1bWRjMmNsABEAEIAAAKoAOJtxA2MycGEuY2xhaW0udjIAAAACD2Nib3KlY2FsZ2ZzaGEyNTZpc2lnbmF0dXJleE1zZWxmI2p1bWJmPS9jMnBhL3VybjpjMnBhOjM0ZjgzYmJkLWVjMzYtNDE1MC1hNWZhLWQ2YzA3NTBkNmIzOC9jMnBhLnNpZ25hdHVyZWppbnN0YW5jZUlEeCx4bXA6aWlkOmM2YjQzODVmLTVlNGItNGUxOC04ZDBlLTgyZWMxMTkwZWY3NHJjcmVhdGVkX2Fzc2VydGlvbnODomN1cmx4LXNlbGYjanVtYmY9YzJwYS5hc3NlcnRpb25zL2MycGEuaW5ncmVkaWVudC52M2RoYXNoWCBI7SEUIn+lCOgSrJ2ScYFWDI2bvIGpptlgi4oaWfdvraJjdXJseCpzZWxmI2p1bWJmPWMycGEuYXNzZXJ0aW9ucy9jMnBhLmFjdGlvbnMudjJkaGFzaFggIsDXM/kAHgtpOWO/DdoVFXSfO/AiY5TkLjPbazFBgGyiY3VybHgpc2VsZiNqdW1iZj1jMnBhLmFzc2VydGlvbnMvYzJwYS5oYXNoLmRhdGFkaGFzaFggdTJtB/TpKLqy2R9NUinnFKOD5J+0ldM9AWL4kG3CspJ0Y2xhaW1fZ2VuZXJhdG9yX2luZm+jZG5hbWVvQW50aHJvcGljIEZpbGVzZ3ZlcnNpb25lMS4wLjBrc3BlY1ZlcnNpb25lMi40LjAAABA4anVtYgAAAChqdW1kYzJjcwARABCAAACqADibcQNjMnBhLnNpZ25hdHVyZQAAABAIY2JvctKEWQISogEmGCFZAgowggIGMIIBjaADAgECAhRA5aAK7sI50L64g/oGQgU9Z1UTADAKBggqhkjOPQQDAzBJMRcwFQYDVQQKEw5BbnRocm9waWMsIFBCQzEuMCwGA1UEAxMlQW50aHJvcGljIENvbnRlbnQgQ3JlZGVudGlhbHMgUm9vdCBDQTAeFw0yNjA4MDcxODQzNTZaFw0yODA4MDYxOTQzNTZaMEQxFzAVBgNVBAoTDkFudGhyb3BpYywgUEJDMSkwJwYDVQQDEyBBbnRocm9waWMgQ2xhdWRlIENvbnRlbnQgU2lnbmluZzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABJh6CmvLUBgFFNU0vUKlOVtE6djd17L5SuwX0LemFisBM3dkd/3cyjxFA3Qo5S46fX0/ihY0VZ7mfb9KF703t5OjWDBWMA4GA1UdDwEB/wQEAwIHgDAVBgNVHSUEDjAMBgorBgEEAYPoXgIBMAwGA1UdEwEB/wQCMAAwHwYDVR0jBBgwFoAUzlHiBIFOZFsj+OPEz5o+nMHXXMIwCgYIKoZIzj0EAwMDZwAwZAIwMXMdFJ4BetLLVY7ORuE9noqbbAZOZn/aArXyTwFAZfKrPzxF2vPoJNf1+UCdg1XGAjBwX1zd9WGqYkqmL5SFqw1QySjr1zJfpJM9+1rdDwSPLMOPOjKuiXjoU/pUUeG9RwmhY3BhZFkNngAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPZYQFMLvoeho91XSkBWhnZpky3gNorL6GbAM4mr+7WpWv0vlebzS8hMl2Qu91F6lWMo2YTp7evjtbAOYDW9+n2f8do=</c2pa:manifest></metadata></svg>

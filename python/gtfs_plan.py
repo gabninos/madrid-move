@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Fahrplan der EMT-Busse (GTFS) -> direkte Busverbindung für eine Route.
+"""EMT bus timetable (GTFS) -> direct bus connection for a route.
 
-GTFS ("General Transit Feed Specification") ist das Standardformat für Fahrpläne: eine ZIP-Datei
-mit Textdateien (CSV). Gebraucht werden:
-    stops.txt          Haltestellen mit Lage
-    routes.txt         Linien (z. B. "27")
-    trips.txt          einzelne Fahrten einer Linie (mit Betriebstagen = service_id)
-    stop_times.txt     wann eine Fahrt an welcher Haltestelle ist
-    frequencies.txt    (optional) Takt statt Uhrzeiten: "7-10 Uhr alle 8 min"
-    calendar.txt, calendar_dates.txt   an welchen Tagen eine service_id fährt
+GTFS ("General Transit Feed Specification") is the standard format for timetables: a ZIP file
+with text files (CSV). We use:
+    stops.txt          stops with location
+    routes.txt         lines (e.g. "27")
+    trips.txt          individual trips of a line (with service days = service_id)
+    stop_times.txt     when a trip is at which stop
+    frequencies.txt    (optional) headway instead of times: "7-10 am every 8 min"
+    calendar.txt, calendar_dates.txt   on which days a service_id runs
 
-Gesucht wird nur die beste DIREKTE Verbindung (ohne Umsteigen):
-    Fußweg zu einer Haltestelle nahe dem Start -> Warten -> Busfahrt -> Fußweg zum Ziel.
+Only the best DIRECT connection (no transfers) is searched:
+    walk to a stop near the start -> wait -> bus ride -> walk to the destination.
 
-Die ZIP-Datei wird automatisch geladen (wöchentlich erneuert) nach python/gtfs/transitemt.zip.
-Klappt der Download nicht (Firewall, Port 8443), die Datei im Browser laden und dort ablegen:
+The ZIP file is downloaded automatically (renewed weekly) to python/gtfs/transitemt.zip.
+If the download fails (firewall, port 8443), download the file in a browser and put it there:
     https://servicios.emtmadrid.es:8443/gtfs/transitemt.zip
 
-Testen (ohne MQTT):
+Testing (without MQTT):
     python gtfs_plan.py test 40.4169 -3.7035 40.4437 -3.7276 08:30
-        Start-Lat Start-Lon Ziel-Lat Ziel-Lon Abfahrt (heute bzw. nächster Tag)
+        start-lat start-lon dest-lat dest-lon departure (today or next day)
 """
 import csv
 import io
@@ -33,18 +33,18 @@ from datetime import date, datetime, timedelta
 
 try:
     from zoneinfo import ZoneInfo
-    TZ = ZoneInfo('Europe/Madrid')       # unter Windows braucht das das Paket "tzdata"
+    TZ = ZoneInfo('Europe/Madrid')       # on Windows this needs the package "tzdata"
 except Exception:                        # noqa: BLE001
     TZ = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GTFS_URL = os.environ.get('GTFS_EMT_URL', 'https://servicios.emtmadrid.es:8443/gtfs/transitemt.zip')
 GTFS_FILE = os.environ.get('GTFS_EMT_FILE', os.path.join(HERE, 'gtfs', 'transitemt.zip'))
-MAX_AGE_S = 7 * 86400          # Fahrplandatei wöchentlich neu laden
-RADIUS_M = 600                 # Haltestellen bis so weit (Luftlinie) vom Start bzw. Ziel
-DETOUR = 1.3                   # Luftlinie -> Fußweg
-WALK_M_PER_MIN = 80            # ca. 4,8 km/h
-MAX_WAIT_MIN = 60              # länger warten gilt als "kein Bus zu dieser Zeit"
+MAX_AGE_S = 7 * 86400          # reload the timetable file weekly
+RADIUS_M = 600                 # stops up to this distance (straight line) from start/destination
+DETOUR = 1.3                   # straight line -> walking distance
+WALK_M_PER_MIN = 80            # about 4.8 km/h
+MAX_WAIT_MIN = 60              # waiting longer counts as "no bus at this time"
 
 
 def now_local():
@@ -61,7 +61,7 @@ def walk_min(meters):
 
 
 def secs(hms):
-    """'25:10:00' -> Sekunden ab Mitternacht des Betriebstags (GTFS erlaubt Zeiten über 24 h)."""
+    """'25:10:00' -> seconds after midnight of the service day (GTFS allows times over 24 h)."""
     h, m, s = (hms.strip().split(':') + ['0', '0'])[:3]
     return int(h) * 3600 + int(m) * 60 + int(s)
 
@@ -72,14 +72,14 @@ def hm(total_secs):
 
 
 def download(log=print, force=False):
-    """Lädt die Fahrplandatei, wenn sie fehlt oder älter als eine Woche ist. True = Datei vorhanden."""
+    """Downloads the timetable file if it is missing or older than a week. True = file available."""
     fresh = os.path.exists(GTFS_FILE) and time.time() - os.path.getmtime(GTFS_FILE) < MAX_AGE_S
     if fresh and not force:
         return True
     os.makedirs(os.path.dirname(GTFS_FILE), exist_ok=True)
     tmp = GTFS_FILE + '.part'
     try:
-        log('Fahrplan: lade', GTFS_URL)
+        log('Timetable: downloading', GTFS_URL)
         req = urllib.request.Request(GTFS_URL, headers={'User-Agent': 'MadridMove/2.0 (UPM DSIoT student project)'})
         with urllib.request.urlopen(req, timeout=120) as r, open(tmp, 'wb') as f:
             while True:
@@ -89,21 +89,21 @@ def download(log=print, force=False):
                 f.write(chunk)
         zipfile.ZipFile(tmp).testzip()
         os.replace(tmp, GTFS_FILE)
-        log(f'Fahrplan: {os.path.getsize(GTFS_FILE) // 1024} KB geladen')
+        log(f'Timetable: {os.path.getsize(GTFS_FILE) // 1024} KB downloaded')
         return True
     except Exception as e:                # noqa: BLE001
         if os.path.exists(tmp):
             os.remove(tmp)
         if os.path.exists(GTFS_FILE):
-            log('Fahrplan: Download fehlgeschlagen, nutze vorhandene Datei:', e)
+            log('Timetable: download failed, using the existing file:', e)
             return True
-        log('Fahrplan: Download fehlgeschlagen:', e)
-        log('  -> Datei im Browser laden und ablegen unter', GTFS_FILE)
+        log('Timetable: download failed:', e)
+        log('  -> download the file in a browser and save it as', GTFS_FILE)
         return False
 
 
 def _rows(zf, name):
-    """Liest eine GTFS-Datei zeilenweise als dict (ohne alles in den Speicher zu laden)."""
+    """Reads a GTFS file row by row as dicts (without loading everything into memory)."""
     match = [n for n in zf.namelist() if n.split('/')[-1] == name]
     if not match:
         return
@@ -113,8 +113,8 @@ def _rows(zf, name):
 
 
 class Timetable:
-    """Fahrplan im Speicher: Haltestellen, Linien, Fahrten, Betriebstage. stop_times wird nur
-    für die Haltestellen nahe den Routen gelesen (sonst wären es Millionen Zeilen)."""
+    """Timetable in memory: stops, lines, trips, service days. stop_times is only read
+    for the stops near the routes (otherwise it would be millions of rows)."""
 
     def __init__(self, path=GTFS_FILE, log=print):
         self.path, self.log = path, log
@@ -143,10 +143,10 @@ class Timetable:
                 self.exceptions[(r['service_id'], r['date'])] = r.get('exception_type') == '1'
         self.points_key = None
         self.conn = {}
-        self.log(f'Fahrplan: {len(self.stops)} Haltestellen, {len(self.routes)} Linien, {len(self.trips)} Fahrten, '
-                 f'{len(self.freq)} Takt-Fahrten ({time.time() - t0:.0f} s)')
+        self.log(f'Timetable: {len(self.stops)} stops, {len(self.routes)} lines, {len(self.trips)} trips, '
+                 f'{len(self.freq)} headway-based trips ({time.time() - t0:.0f} s)')
 
-    # ---------- Betriebstage ----------
+    # ---------- service days ----------
     def runs(self, service_id, day):
         ds = day.strftime('%Y%m%d')
         ex = self.exceptions.get((service_id, ds))
@@ -159,10 +159,10 @@ class Timetable:
         return {sid: dist_m(lat, lon, s[1], s[2]) for sid, s in self.stops.items()
                 if dist_m(lat, lon, s[1], s[2]) <= RADIUS_M}
 
-    # ---------- Verbindungen vorbereiten ----------
+    # ---------- prepare connections ----------
     def prepare(self, routes):
-        """routes: {key: (start_lat, start_lon, ziel_lat, ziel_lon)}. Liest stop_times einmal und merkt sich
-        alle Fahrten, die eine Haltestelle nahe dem Start VOR einer Haltestelle nahe dem Ziel anfahren."""
+        """routes: {key: (start_lat, start_lon, dest_lat, dest_lon)}. Reads stop_times once and keeps
+        all trips that serve a stop near the start BEFORE a stop near the destination."""
         key = tuple(sorted(routes.items()))
         if key == self.points_key:
             return
@@ -171,7 +171,7 @@ class Timetable:
         wanted = set()
         for a, b in near.values():
             wanted |= set(a) | set(b)
-        visits, first = {}, {}           # trip -> [(seq, stop, arr, dep)], trip -> (seq, dep) der ersten Haltestelle
+        visits, first = {}, {}           # trip -> [(seq, stop, arr, dep)], trip -> (seq, dep) of the first stop
         with zipfile.ZipFile(self.path) as zf:
             for r in _rows(zf, 'stop_times.txt'):
                 trip = r['trip_id']
@@ -183,8 +183,8 @@ class Timetable:
                     arr = secs(r.get('arrival_time') or r['departure_time'])
                     dep = secs(r.get('departure_time') or r['arrival_time'])
                 except (KeyError, ValueError):
-                    continue             # Haltestelle ohne Zeitangabe (in GTFS erlaubt) -> überspringen
-                if is_freq:              # bei Takt-Fahrten sind die Zeiten relativ zur ersten Haltestelle
+                    continue             # stop without a time (allowed in GTFS) -> skip
+                if is_freq:              # for headway-based trips, times are relative to the first stop
                     f = first.get(trip)
                     if f is None or seq < f[0]:
                         first[trip] = (seq, dep)
@@ -192,7 +192,7 @@ class Timetable:
                     visits.setdefault(trip, []).append((seq, r['stop_id'], arr, dep))
         self.conn = {}
         for k, (a, b) in near.items():
-            best = {}                    # (trip) -> beste Kombination Ein-/Ausstieg für diese Route
+            best = {}                    # (trip) -> best boarding/alighting pair for this route
             for trip, vs in visits.items():
                 ons = [v for v in vs if v[1] in a]
                 offs = [v for v in vs if v[1] in b]
@@ -208,12 +208,12 @@ class Timetable:
             self.conn[k] = [(trip,) + v[1:] for trip, v in best.items()]
         self.first = first
         self.points_key = key
-        self.log(f'Fahrplan: Verbindungen für {len(routes)} Routen vorbereitet '
+        self.log(f'Timetable: connections prepared for {len(routes)} routes '
                  f'({sum(len(c) for c in self.conn.values())} Fahrten, {time.time() - t0:.0f} s)')
 
-    # ---------- beste Verbindung zu einem Zeitpunkt ----------
+    # ---------- best connection at a given time ----------
     def best(self, key, dep_dt):
-        """Beste direkte Verbindung, wenn man um dep_dt (lokale Zeit) am Startpunkt losgeht."""
+        """Best direct connection when leaving the start point at dep_dt (local time)."""
         conns = self.conn.get(key)
         if not conns:
             return {'status': 'nodirect'}
@@ -224,17 +224,17 @@ class Timetable:
             route_id, service_id, headsign = self.trips.get(trip, (None, None, ''))
             if route_id is None:
                 continue
-            need = t_leave + walk_on * 60            # so früh kann man an der Haltestelle sein
-            # Betriebstag gestern (Zeiten über 24 h = nach Mitternacht) und heute
+            need = t_leave + walk_on * 60            # earliest time at the stop
+            # service day yesterday (times over 24 h = after midnight) and today
             for offset_days, shift in ((1, 86400), (0, 0)):
                 sday = day - timedelta(days=offset_days)
                 if not self.runs(service_id, sday):
                     continue
                 if trip in self.freq:
                     f0 = self.first.get(trip, (0, on[3]))[1]
-                    rel = on[3] - f0                  # Fahrzeit von der Starthaltestelle der Linie bis hierher
+                    rel = on[3] - f0                  # travel time from the line's first stop to here
                     for start, end, headway, exact in self.freq[trip]:
-                        # Abfahrten an "on": start+rel, start+rel+headway, ... (bis end+rel)
+                        # departures at "on": start+rel, start+rel+headway, ... (until end+rel)
                         lo, hi = start + rel - shift, end + rel - shift
                         if need > hi:
                             continue
@@ -242,11 +242,11 @@ class Timetable:
                         t_on = lo + k * headway
                         if t_on > hi:
                             continue
-                        if exact:                 # Takt mit festen Zeiten
+                        if exact:                 # headway with fixed times
                             wait = (t_on - need) / 60
-                        elif need < lo:           # vor Betriebsbeginn: bis zur ersten Fahrt warten
+                        elif need < lo:           # before service starts: wait for the first trip
                             wait = (lo - need) / 60
-                        else:                     # ungefährer Takt: erwartete Wartezeit = halber Takt
+                        else:                     # approximate headway: expected wait = half the headway
                             wait = headway / 120
                         if wait > MAX_WAIT_MIN:
                             continue
@@ -278,7 +278,7 @@ class Timetable:
 
 
 def next_departure(dep, now=None):
-    """Nächste Abfahrt einer Route ({time:'08:30', days:[1..7]}) als lokale datetime, sonst None."""
+    """Next departure of a route ({time:'08:30', days:[1..7]}) as local datetime, otherwise None."""
     now = now or now_local()
     try:
         h, m = (int(x) for x in dep['time'].split(':'))
@@ -302,7 +302,7 @@ def main(argv):
     s_lat, s_lon, z_lat, z_lon = (float(x) for x in argv[2:6])
     tt.prepare({'test': (s_lat, s_lon, z_lat, z_lon)})
     d = next_departure({'time': argv[6], 'days': [1, 2, 3, 4, 5, 6, 7]})
-    print('Abfahrt', d.strftime('%a %d.%m. %H:%M'), '->', tt.best('test', d))
+    print('Departure', d.strftime('%a %Y-%m-%d %H:%M'), '->', tt.best('test', d))
     return 0
 
 

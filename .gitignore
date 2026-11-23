@@ -168,7 +168,7 @@ __pycache__/
 .venv/
 python/stations_cache.json
 
-# MadridMove: geheime Zugangsdaten und Token-Cache (nie committen)
+# MadridMove: secret credentials and token cache (never commit)
 python/secrets.env
 python/.emt_token.json
 python/gtfs/
