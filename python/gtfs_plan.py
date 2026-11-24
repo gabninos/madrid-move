@@ -209,7 +209,7 @@ class Timetable:
         self.first = first
         self.points_key = key
         self.log(f'Timetable: connections prepared for {len(routes)} routes '
-                 f'({sum(len(c) for c in self.conn.values())} Fahrten, {time.time() - t0:.0f} s)')
+                 f'({sum(len(c) for c in self.conn.values())} trips, {time.time() - t0:.0f} s)')
 
     # ---------- best connection at a given time ----------
     def best(self, key, dep_dt):
