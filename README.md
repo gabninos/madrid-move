@@ -63,7 +63,7 @@ flowchart LR
 | `python/client.py` | Python | **Producer + consumer**: save routes and settings, receive notifications |
 | Profile service | Node-RED | Route → bike time, walking time, transit estimate (openrouteservice if a key is set) |
 | Recommendation service | Node-RED | "planned" (preview) before the time window; inside it bike ok or warning, plus notifications |
-| Statistics service | Node-RED | Key figures for the charts: commuter wave, centre vs outskirts, weather and bike use |
+| Statistics service | Node-RED | Key figures for the charts: fill level over 24 h, centre vs outskirts, weather and bike use |
 | Dashboard | Node-RED | Route overview (recommendations), Statistics (charts), Manage routes (forms), System status, demo |
 
 ## Topics (prefix `upm-dsiot-g6/move`)
@@ -77,7 +77,7 @@ flowchart LR
 | `plan/<user>/<route>` | best direct bus connection by timetable for the next departure: line, boarding/alighting stop, departure or headway, ride time, total time; `status` ok / nodirect / noservice | 1 | yes | Collector |
 | `stats/now` | free bikes, empty/full stations, fill level centre/outskirts | 0 | yes | Statistics service |
 | `stats/spatial` | per station `[km to Sol, fill level %]` | 0 | yes | Statistics service |
-| `stats/history` | history: commuter wave (5 min, 24 h), bike movements + weather (10 min, 3 days) | 1 | yes | Statistics service |
+| `stats/history` | history: fill level (5 min, 24 h), bike movements + weather (10 min, 3 days) | 1 | yes | Statistics service |
 | `routes/<user>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, empty = delete | 1 | yes | Client / Dashboard |
 | `users/<user>/settings` | `{rain: none/light/any, windMax, tempMin, tempMax}` | 1 | yes | Client / Dashboard |
 | `profiles/<user>/<route>` | bike time, elevation, walking time, transit estimate | 1 | yes | Profile service |
@@ -175,9 +175,9 @@ Screen: on the left the dashboard (*Route overview*), on the right a terminal wi
 | Chart | What it shows | Data |
 |---|---|---|
 | Madrid now | weather, free bikes, empty/full stations, fill level, bike movements, status of the data sources (BiciMAD, weather, timetable, EMT) | `stats/now`, `live/weather`, `system/+` |
-| Commuter wave | fill level (bikes ÷ docks) in the centre (≤ 3 km around Sol) and in the outskirts over 24 h | one point every 5 min |
+| Fill level in the centre and the outskirts | fill level (bikes ÷ docks) in the centre (≤ 3 km around Sol) and in the outskirts over 24 h | one point every 5 min |
 | Centre vs outskirts | every station: distance to Puerta del Sol vs fill level | every minute |
-| Weather and bike use | bike movements per 10 min (blue = rain) and below temperature and wind | every 10 min, 3 days |
+| Weather and bike use | three charts on the same time axis: bike movements per 10 min, rain (mm), temperature and wind | every 10 min, 3 days |
 
 The history is retained on `stats/history` and taken over after a Node-RED restart. The charts only fill while the collector and Node-RED are running: for the presentation, start them a few hours before.
 
