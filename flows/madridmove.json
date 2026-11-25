@@ -858,8 +858,8 @@
   {
     "id": "213208492591d653",
     "type": "ui-text-input",
-    "name": "Your name (short name)",
-    "label": "Your name (short name)",
+    "name": "User name (short name)",
+    "label": "User name (short name)",
     "topic": "user",
     "topicType": "str",
     "mode": "text",
@@ -1210,55 +1210,10 @@
     "inputs": 0,
     "wires": [
       [
-        "c0bb66e34aebe6ae",
         "mm7kpifn00000001"
       ]
     ],
     "x": 140,
-    "y": 850,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "c0bb66e34aebe6ae",
-    "type": "function",
-    "name": "Weather text",
-    "func": "// .../live/weather -> text line: current weather + rain in the forecast (next 2 h)\nconst w = msg.payload;\nif (typeof w !== 'object' || w == null) return null;\nconst hm = ms => new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });\nconst rain = (w.forecast || []).filter(f => f.t <= Date.now() + 2 * 3600000 && f.precip >= 0.1);\nconst fc = !(w.forecast || []).length ? '' : rain.length ? ' · rain expected from ' + hm(rain[0].t) : ' · next 2 h dry';\nreturn { payload: w.temp + ' °C · ' + w.precip + ' mm · Wind ' + w.wind + ' km/h' + fc +\n    ' · as of ' + hm(w.ts) };\n",
-    "outputs": 1,
-    "timeout": 0,
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "wires": [
-      [
-        "0c0addcf953bd994"
-      ]
-    ],
-    "x": 330,
-    "y": 850,
-    "z": "cf931b46039477f7"
-  },
-  {
-    "id": "0c0addcf953bd994",
-    "type": "ui-text",
-    "name": "Current",
-    "label": "Current",
-    "format": "{{msg.payload}}",
-    "layout": "row-left",
-    "style": false,
-    "font": "",
-    "fontSize": 16,
-    "color": "#717171",
-    "wrapText": true,
-    "value": "payload",
-    "valueType": "msg",
-    "wires": [],
-    "group": "a8c68267a6a734e3",
-    "order": 1,
-    "width": "6",
-    "height": "0",
-    "className": "",
-    "x": 520,
     "y": 850,
     "z": "cf931b46039477f7"
   },
@@ -1638,27 +1593,13 @@
     "groupType": "default"
   },
   {
-    "id": "a8c68267a6a734e3",
-    "type": "ui-group",
-    "name": "Weather in Madrid",
-    "page": "a27978ccd7d7ec45",
-    "width": "6",
-    "height": "1",
-    "order": 2,
-    "showTitle": true,
-    "className": "",
-    "visible": "true",
-    "disabled": "false",
-    "groupType": "default"
-  },
-  {
     "id": "6d5459b008feb016",
     "type": "ui-group",
     "name": "Demo",
     "page": "a27978ccd7d7ec45",
     "width": "6",
     "height": "1",
-    "order": 3,
+    "order": 2,
     "showTitle": true,
     "className": "",
     "visible": "true",
@@ -1913,7 +1854,7 @@
   {
     "id": "deb7ecba2f37046a",
     "type": "ui-group",
-    "name": "Who are you?",
+    "name": "User name",
     "page": "494ef9dd12244e66",
     "width": "12",
     "height": "1",
