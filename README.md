@@ -28,7 +28,7 @@ flowchart LR
     CLI[client.py<br/>g6-client-&lt;user&gt;]
   end
   subgraph NR["Node-RED"]
-    PD[Profile service]
+    PD[Route profile service]
     RE[Recommendation service]
     DB[Dashboard]
     STA[Statistics service]
@@ -62,7 +62,7 @@ flowchart LR
 | `python/emt.py` | Python | Login at EMT MobilityLabs, token cache and automatic renewal |
 | `python/gtfs_plan.py` | Python | EMT bus timetable (GTFS): best direct bus connection per route |
 | `python/client.py` | Python | **Producer + consumer**: save routes and settings, receive notifications |
-| Profile service | Node-RED | Route → bike time, walking time, transit estimate (openrouteservice if a key is set) |
+| Route profile service | Node-RED | Route → bike time, walking time, transit estimate (openrouteservice if a key is set) |
 | Recommendation service | Node-RED | "planned" (preview) before the time window; inside it bike ok or warning, plus notifications |
 | Statistics service | Node-RED | Key figures for the charts: fill level over 24 h, centre vs outskirts, weather and bike use |
 | Dashboard | Node-RED | Route overview (recommendations), Statistics (charts), Manage routes (forms), System status, demo |
@@ -81,7 +81,7 @@ flowchart LR
 | `stats/history` | history: fill level (5 min, 24 h), bike movements + weather (10 min, 24 h) | 1 | yes | Statistics service |
 | `routes/<user>/<route>` | `{name, from:{id,label}, to:{id,label}, departure:{time, days}}`, empty = delete | 1 | yes | Client / Dashboard |
 | `users/<user>/settings` | `{rain: none/light/any, windMax, tempMin, tempMax}` | 1 | yes | Client / Dashboard |
-| `profiles/<user>/<route>` | bike time, elevation, walking time, transit estimate | 1 | yes | Profile service |
+| `profiles/<user>/<route>` | bike time, elevation, walking time, transit estimate | 1 | yes | Route profile service |
 | `reco/<user>/<route>` | status planned / ok / warn / unknown with reasons and alternatives | 1 | yes | Recommendation service |
 | `alerts/<user>` | pre-departure info, warning, all-clear (text) | 1 | no | Recommendation service |
 | `system/<service>` | `online` / `offline (stopped)` / `offline (crashed)` | 1 | yes | Birth / close / **Last Will** |
@@ -214,7 +214,7 @@ Watch everything: `mosquitto_sub -h test.mosquitto.org -t 'upm-dsiot-g6/move/#' 
 ## Folder structure
 
 ```
-flows/      madridmove.json (all 5 tabs: Configuration, Profile service, Recommendation, Dashboard, Statistics)
+flows/      madridmove.json (all 5 tabs: Configuration, Route profile service, Recommendation, Dashboard, Statistics)
 python/     collector.py, client.py, emt.py, gtfs_plan.py, config.py, requirements.txt, secrets.env.example
             (secrets.env, .emt_token.json and gtfs/: local only, git-ignored)
 report/     architecture diagram

@@ -111,7 +111,7 @@
   {
     "id": "d0758e3c8908c3f2",
     "type": "tab",
-    "label": "Profile service",
+    "label": "Route profile service",
     "disabled": false,
     "info": "Subscribes to `.../routes/+/+`. For every new route a route profile is computed ONCE (openrouteservice: length, duration, elevation, share of cycle paths; without a key: estimate) and published retained on `.../profiles/<user>/<route>`."
   },
