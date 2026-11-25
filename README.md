@@ -85,7 +85,11 @@ flowchart LR
 | `alerts/<user>` | pre-departure info, warning, all-clear (text) | 1 | no | Recommendation service |
 | `system/<service>` | `online` / `offline (stopped)` / `offline (crashed)` | 1 | yes | Birth / close / **Last Will** |
 
-**Last Will topics:** `system/bicimad`, `system/weather`, `system/timetable` and `system/emt` (collector, one connection each), `system/client-<user>` (client). If a connection breaks without DISCONNECT, the broker publishes "offline (crashed)" (retained). On a clean shutdown the programs first send "offline (stopped)", on start "online" (birth message).
+**Last Will topics:** `system/bicimad`, `system/weather`, `system/timetable` and `system/emt` (collector, one connection each), `system/client-<user>` (client) and `system/app` (Node-RED, set in the broker node `g6-app`). If a connection breaks without DISCONNECT, the broker publishes "offline (crashed)" (retained). On a clean shutdown the programs first send "offline (stopped)", on start "online" (birth message).
+
+**When does the Last Will arrive?** If the process dies (`kill -9`, crash), the operating system closes the TCP connection and the broker publishes the will at once. If the connection breaks silently (Wi-Fi gone, laptop asleep, process frozen), the broker only notices through the keep-alive: no packet for 1.5 × 30 s → will after about 45 s.
+
+**Where a Node-RED failure is visible:** the dashboard is down with it, so the client shows it: `listen` prints "Recommendation service offline (crashed): no notifications until it is back" and "back online", `routes` adds a note that the statuses may be outdated. If the broker cannot be reached, the client stops with a clear message and saves nothing; a QoS 1 publish counts as saved only after the broker's PUBACK.
 
 ## Delivery semantics
 
@@ -167,7 +171,7 @@ Screen: on the left the dashboard (*Route overview*), on the right a terminal wi
 
 1. **Add a route**: on *Manage routes*, as user `demo`, add a route with departure in about 12 min (or on *System & demo* "Create demo route": Sol → Ciudad Universitaria, departure in 14 min, default limits). The subscriber shows `routes/demo/…`, the card appears, the client reports "saved … ✓ Bike is fine" and shortly afterwards the pre-departure info.
 2. **Personal limits with real weather**: under *My settings* set the minimum temperature above the current temperature → **warning** with alternatives (bus by timetable, walking). Set it back → **all-clear**.
-3. **Last Will**: close the collector window hard (or `kill -9`) → after about 45 s "offline (crashed)", a hint appears on *Statistics* and *System & demo*; the route card switches to "? Data missing" without a false all-clear.
+3. **Last Will and keep-alive**: freeze the collector with `kill -STOP <PID>` (connection stays open, but no more pings) → after about 45 s the broker publishes "offline (crashed)", a hint appears on *Statistics* and *System & demo*, the route card switches to "? Data missing" without a false all-clear. `kill -CONT <PID>` → the collector reconnects, "online". (With `kill -9` the will comes at once, because the operating system closes the connection.)
 4. Optional **persistent session**: stop the client, change a setting, restart the client → "(session resumed)", the missed notification is delivered.
 
 ## Dashboard charts (page *Statistics*)
@@ -189,7 +193,10 @@ The history is retained on `stats/history` and taken over after a Node-RED resta
 | 2 | Add a route with departure in 16 min | pre-departure info after about 1 min |
 | 3 | Route with departure in 2 h, minimum temperature above the current temperature | card stays "planned" with the preview "forecast: …", **no** notification; the warning comes 30 min before departure |
 | 4 | Stop the collector with Ctrl+C | `system/bicimad` = "offline (stopped)" |
-| 5 | Kill the collector (`kill -9 <PID>`) | "offline (crashed)" (Last Will) |
+| 5 | Kill the collector (`kill -9 <PID>`) | "offline (crashed)" at once (Last Will) |
+| 5b | Freeze the collector (`kill -STOP <PID>`), later `kill -CONT <PID>` | "offline (crashed)" after about 45 s (keep-alive), then "online" again |
+| 5c | Stop Node-RED with Ctrl+C / kill it, client `listen` running | client prints "Recommendation service offline (stopped)" / "(crashed)", after a restart "back online" |
+| 5d | Client command without network or with a wrong broker | "Broker … not reachable … Nothing was sent or saved", no traceback |
 | 6 | Stop the client, change a setting (trigger a warning), restart the client | "session resumed", missed notifications are delivered |
 | 7 | Two users with the same route, only one with a tight temperature limit | warning only for that user |
 | 8 | Stop the collector and wait 15 min | status "? Data missing", no notification |

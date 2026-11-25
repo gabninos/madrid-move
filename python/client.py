@@ -15,6 +15,9 @@ Commands:
     python3 client.py listen <user>
         Receive notifications (pre-departure info, warning, all-clear). Persistent session:
         notifications that arrive while the client is off are delivered on the next start.
+        Also shows when the recommendation service (Node-RED, .../system/app) goes offline.
+
+If the broker cannot be reached, every command stops with a clear message and saves nothing.
 """
 import argparse
 import json
@@ -43,10 +46,20 @@ def slug(s):
     return re.sub(r'[^a-z0-9]+', '-', norm(s)).strip('-')[:30]
 
 
-def connect(client_id=None, clean=True):
-    c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
-                    client_id=client_id or f'{TAG}-cli-{int(time.time() * 1000) % 10**8}', clean_session=clean)
-    c.connect(BROKER, PORT, keepalive=KEEPALIVE)
+def broker_down(e):
+    sys.exit(f'Broker {BROKER}:{PORT} not reachable ({e}). Nothing was sent or saved. '
+             f'Check the network and try again.')
+
+
+def connect(client_id=None, clean=True, c=None):
+    """Connects to the broker; stops with a clear message instead of a traceback if it is down."""
+    if c is None:
+        c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                        client_id=client_id or f'{TAG}-cli-{int(time.time() * 1000) % 10**8}', clean_session=clean)
+    try:
+        c.connect(BROKER, PORT, keepalive=KEEPALIVE)
+    except (OSError, ValueError) as e:     # DNS error, refused, timeout, no network
+        broker_down(e)
     return c
 
 
@@ -77,9 +90,17 @@ def publish(topic, payload, retain=True):
     c = connect()
     c.loop_start()
     data = '' if payload is None else json.dumps(payload, ensure_ascii=False)
-    c.publish(topic, data, qos=1, retain=retain).wait_for_publish(5)
+    info = c.publish(topic, data, qos=1, retain=retain)
+    try:
+        info.wait_for_publish(5)
+    except (RuntimeError, ValueError) as e:  # connection lost before sending
+        broker_down(e)
+    ok = info.is_published()                 # QoS 1: True only after the broker's PUBACK
     c.loop_stop()
     c.disconnect()
+    if not ok:
+        sys.exit('No acknowledgement (PUBACK) from the broker within 5 s. '
+                 'The change may not be saved, please run the command again.')
 
 
 def stations():
@@ -138,6 +159,9 @@ def cmd_routes(a):
     user = slug(a.user)
     routes = read_retained(f'{PREFIX}/routes/{user}/+')
     recos = read_retained(f'{PREFIX}/reco/{user}/+')
+    app = next(iter(read_retained(f'{PREFIX}/system/app', wait=2).values()), None)
+    if app and not str(app).startswith('online'):
+        print(f'Note: recommendation service is {app}. Statuses below may be outdated.')
     if not routes:
         print('No routes saved.')
     for topic, r in sorted(routes.items()):
@@ -184,13 +208,33 @@ def cmd_listen(a):
         resumed = ' (session resumed)' if flags.session_present else ''
         print(f'Connected to {BROKER}{resumed}. Waiting for notifications for "{user}" ... (Ctrl+C to quit)')
         cl.publish(status, 'online', qos=1, retain=True)
-        cl.subscribe(f'{PREFIX}/alerts/{user}', qos=1)
+        cl.subscribe([(f'{PREFIX}/alerts/{user}', 1), (f'{PREFIX}/system/app', 1)])
+
+    def on_disconnect(cl, ud, flags, rc, props):
+        if not rc.is_failure:
+            return
+        print(f'{datetime.now():%H:%M:%S}  Connection to the broker lost ({rc}). Reconnecting ...', flush=True)
+
+    last_app = {'state': None}
 
     def on_message(cl, ud, msg):
         text = msg.payload.decode('utf-8', 'replace')
+        if msg.topic.endswith('/system/app'):
+            # Status of the recommendation service (Node-RED): birth / close / Last Will
+            if text == last_app['state']:
+                return
+            first = last_app['state'] is None
+            last_app['state'] = text
+            if text.startswith('online'):
+                if not first:
+                    print(f"{datetime.now():%H:%M:%S}  Recommendation service is back online.", flush=True)
+            elif text:
+                print(f"{datetime.now():%H:%M:%S}  Recommendation service {text}: "
+                      f"no notifications until it is back.", flush=True)
+            return
         print(f"{datetime.now():%H:%M:%S}  {text}", flush=True)
-    c.on_connect, c.on_message = on_connect, on_message
-    c.connect(BROKER, PORT, keepalive=KEEPALIVE)
+    c.on_connect, c.on_message, c.on_disconnect = on_connect, on_message, on_disconnect
+    connect(c=c)
     try:
         c.loop_forever()
     except KeyboardInterrupt:
