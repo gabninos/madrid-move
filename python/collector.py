@@ -12,12 +12,14 @@ Publishes (all retained):
     <prefix>/live/bicimad/<id>         {bikes, docks, renting, returning, ts} (QoS 0),
                                        only on change, at the latest every 10 min ("report by exception")
     <prefix>/live/weather              current weather + 24 h forecast in 15-min steps (QoS 0), every 10 min
-    <prefix>/live/emt/<user>/<route>   next buses at the stop near the start of the route (QoS 0), every 90 s
+    <prefix>/live/emt/<user>/<route>   next buses of the timetable's line at its boarding stop (QoS 0),
+                                       every 90 s, only from 30 min before departure
     <prefix>/plan/<user>/<route>       best direct bus connection by timetable for the next departure (QoS 1)
 
 Subscribes to:
-    <prefix>/profiles/+/+              (EMT, timetable) start and end points of the routes
+    <prefix>/profiles/+/+              (timetable) start and end points of the routes
     <prefix>/routes/+/+                (timetable) departure times of the routes
+    <prefix>/plan/+/+                  (EMT) line, direction and boarding stop proposed by the timetable
 
 Start:  python3 collector.py        (Ctrl+C = clean shutdown -> "offline (stopped)")
 """
@@ -39,8 +41,7 @@ WEATHER_EVERY_S = 600          # weather every 10 min
 REFRESH_MS = 10 * 60 * 1000    # resend an unchanged station after 10 min at the latest
 EMT_EVERY_S = 90               # bus arrivals per route every 90 s (EMT counts requests per day)
 EMT_MAX_ROUTES = 10            # query at most this many routes
-EMT_RADIUS_M = 400             # stops within this radius of the start point
-EMT_MAX_STOPS = 3              # up to 3 stops per route (only if they add more lines)
+EMT_WINDOW_MIN = 30            # live arrivals only from this many minutes before departure
 CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stations_cache.json')
 # retained topics of older versions, cleared on start
 LEGACY_TOPICS = ['system/fahrplan', 'system/sim', 'sim/state']
@@ -200,29 +201,31 @@ def weather_loop(src):
 # ---------------------------------------------------------------- EMT (Bus)
 
 class EmtRoutes:
-    """Keeps the start points of all routes (from the retained profiles)."""
+    """Keeps the bus proposed by the timetable for each route (from the retained plan/ messages):
+    boarding stop, line and direction. Routes without a direct bus get no live data."""
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.routes = {}            # 'user/route' -> (lat, lon)
-        self.removed = set()        # deleted routes: delete their retained bus data too
+        self.routes = {}            # 'user/route' -> {stop, name, line, headsign, depAt, fixed}
+        self.removed = set()        # no (more) proposal: delete the retained bus data too
         self.changed = threading.Event()
 
     def on_message(self, msg):
         key = '/'.join(msg.topic.split('/')[-2:])
-        point = None
+        target = None
         if msg.payload:
             try:
                 p = json.loads(msg.payload)
-                pt = p.get('fromPoint') or p.get('from') or {}
-                if pt.get('lat') is not None and pt.get('lon') is not None:
-                    point = (round(float(pt['lat']), 5), round(float(pt['lon']), 5))
+                if p.get('status') == 'ok' and p.get('board', {}).get('id') and p.get('line'):
+                    target = {'stop': str(p['board']['id']), 'name': p['board'].get('name', ''),
+                              'line': str(p['line']), 'headsign': p.get('headsign') or '',
+                              'depAt': int(p.get('depAt') or 0), 'fixed': bool(p.get('forDeparture'))}
             except (ValueError, AttributeError, TypeError):
                 pass
         with self.lock:
-            if point:
-                if self.routes.get(key) != point:
-                    self.routes[key] = point
+            if target:
+                if self.routes.get(key) != target:
+                    self.routes[key] = target
                     self.changed.set()
                 self.removed.discard(key)
             elif key in self.routes:
@@ -231,57 +234,65 @@ class EmtRoutes:
                 self.changed.set()
 
 
+def _norm_line(x):
+    return str(x).lstrip('0').upper() or '0'
+
+
+def _words(text):
+    import unicodedata
+    t = unicodedata.normalize('NFD', str(text).lower())
+    t = ''.join(ch if ch.isalnum() else ' ' for ch in t if unicodedata.category(ch) != 'Mn')
+    return {w for w in t.split() if len(w) >= 4}
+
+
+def pick_arrivals(arrivals, line, headsign):
+    """Only the proposed line; if its buses at this stop go to different destinations,
+    only those whose destination matches the timetable's direction (headsign)."""
+    same = [a for a in arrivals if _norm_line(a['line']) == _norm_line(line)]
+    want = _words(headsign)
+    if want and len({a.get('destination', '') for a in same}) > 1:
+        match = [a for a in same if want & _words(a.get('destination', ''))]
+        if match:
+            return match
+    return same
+
+
 def emt_loop(src, emt, routes):
-    nearest = {}                    # (lat, lon) -> stops (cache, does not change)
-    warned = set()
+    """Live arrivals only where they help: the line proposed by the timetable, at its boarding
+    stop, from EMT_WINDOW_MIN before the departure (routes without a fixed departure: always)."""
+    active, warned = set(), set()
     while not stop.is_set():
         routes.changed.clear()
+        now_ms = time.time() * 1000
         with routes.lock:
-            todo = sorted(routes.routes.items())[:EMT_MAX_ROUTES]
+            plans = dict(routes.routes)
             removed, routes.removed = routes.removed, set()
-        for key in removed:
+        due = sorted(k for k, t in plans.items()
+                     if not t['fixed'] or -5 * 60000 <= t['depAt'] - now_ms <= EMT_WINDOW_MIN * 60000)[:EMT_MAX_ROUTES]
+        for key in removed | (active - set(due)):      # no proposal or outside the window: delete
             src.publish(f'{PREFIX}/live/emt/{key}', '', qos=0)
+            active.discard(key)
         ok = 0
-        for key, (lat, lon) in todo:
+        for key in due:
+            t = plans[key]
             try:
-                if (lat, lon) not in nearest:
-                    # nearest stops; another one only if it adds more lines
-                    chosen, lines = [], set()
-                    for s in emt.stops_around(lat, lon, EMT_RADIUS_M):
-                        if not chosen or not set(s['lines']) <= lines:
-                            chosen.append(s)
-                            lines |= set(s['lines'])
-                        if len(chosen) >= EMT_MAX_STOPS:
-                            break
-                    nearest[(lat, lon)] = chosen
-                stops = nearest[(lat, lon)]
-                if not stops:
-                    if key not in warned:
-                        log(f'EMT: no bus stop within {EMT_RADIUS_M} m for {key}')
-                        warned.add(key)
-                    continue
-                arr = []
-                for s in stops:
-                    for a in emt.arrivals(s['id']):
-                        arr.append(dict(a, stop=s['name'], distM=s['distM']))
-                arr = sorted(arr, key=lambda a: a['min'])[:8]
+                arr = pick_arrivals(emt.arrivals(t['stop']), t['line'], t['headsign'])[:4]
                 if not arr and key not in warned:
-                    log(f"EMT: {', '.join(s['name'] for s in stops)} currently report no buses ({key})")
+                    log(f"EMT: line {t['line']} currently not reported at {t['name']} ({key})")
                     warned.add(key)
                 elif arr:
                     warned.discard(key)
-                s0 = stops[0]
                 src.publish(f'{PREFIX}/live/emt/{key}', {
-                    'stop': {'id': s0['id'], 'name': s0['name'], 'distM': s0['distM']},
-                    'stops': [{'id': s['id'], 'name': s['name'], 'distM': s['distM'], 'lines': s['lines']} for s in stops],
+                    'stop': {'id': t['stop'], 'name': t['name']}, 'line': t['line'], 'headsign': t['headsign'],
                     'arrivals': arr, 'ts': int(time.time() * 1000)}, qos=0)
+                active.add(key)
                 ok += 1
             except Exception as e:      # network, token, unexpected format
                 log('EMT error', key + ':', e)
         src.publish(src.status_topic, 'online', qos=1)
-        if todo:
-            log(f'EMT: buses sent for {ok}/{len(todo)} routes')
-        # new route -> query at once, otherwise every EMT_EVERY_S seconds
+        if due:
+            log(f'EMT: buses sent for {ok}/{len(due)} routes')
+        # new or changed proposal -> query at once, otherwise every EMT_EVERY_S seconds
         routes.changed.wait(EMT_EVERY_S)
 
 
@@ -386,7 +397,7 @@ def main():
         if creds:
             client = emt_api.EmtClient(creds, log=log)
             routes = EmtRoutes()
-            emt_src = Source('emt', [(f'{PREFIX}/profiles/+/+', 1)], routes.on_message)
+            emt_src = Source('emt', [(f'{PREFIX}/plan/+/+', 1)], routes.on_message)
             sources.append(emt_src)
             threads.append(threading.Thread(target=emt_loop, args=(emt_src, client, routes), daemon=True))
             emt_on = True

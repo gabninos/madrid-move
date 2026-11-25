@@ -40,6 +40,7 @@ flowchart LR
   EMT --> COL
   GTFS --> COL
   COL -- static, live, plan, system --> BR
+  BR -- routes, profiles, plan --> COL
   CLI -- routes, settings --> BR
   BR -- alerts --> CLI
   BR -- routes, stations --> PD
@@ -73,7 +74,7 @@ flowchart LR
 | `static/stations` | station list (id, name, lat, lon, capacity) | 1 | yes | Collector |
 | `live/bicimad/<station>` | `{bikes, docks, renting, returning, ts}`, only on change, at the latest every 10 min | 0 | yes | Collector |
 | `live/weather` | current weather + 24 h forecast in 15-min steps | 0 | yes | Collector |
-| `live/emt/<user>/<route>` | `{stop:{id,name,distM}, arrivals:[{line,destination,min}], ts}` next buses near the start, every 90 s | 0 | yes | Collector (only with EMT access) |
+| `live/emt/<user>/<route>` | `{stop:{id,name}, line, headsign, arrivals:[{line,destination,min}], ts}` next buses of the timetable's line at its boarding stop, every 90 s, from 30 min before departure | 0 | yes | Collector (only with EMT access) |
 | `plan/<user>/<route>` | best direct bus connection by timetable for the next departure: line, boarding/alighting stop, departure or headway, ride time, total time; `status` ok / nodirect / noservice | 1 | yes | Collector |
 | `stats/now` | free bikes, empty/full stations, fill level centre/outskirts | 0 | yes | Statistics service |
 | `stats/spatial` | per station `[km to Sol, fill level %]` | 0 | yes | Statistics service |
@@ -110,7 +111,7 @@ All values are in Node-RED in the tab *⚙ Configuration* under `reco`.
 | Weather | Forecast for the trip (departure to arrival). Warning if the personal limit is exceeded: rain ("no rain": from 0.1 mm/15 min, "light rain ok": from 1.0 mm), wind above `windMax`, temperature outside `tempMin`–`tempMax`. |
 | Bikes | 3 or more bikes: ok. Fewer: an alternative station within 500 m with ≥ 3 bikes → hint only. None → warning. |
 | Alternatives | Walking or transit at least 5 min faster → warning. Every warning lists both alternatives. |
-| Transit | 1. **Timetable** (EMT GTFS): best direct bus line from a stop within 600 m of the start to a stop within 600 m of the destination, at the planned departure. Time = walk + wait (half the headway for frequency-based lines) + ride time by timetable + walk. If no direct bus runs at that time (wait > 60 min), transit is not an alternative. 2. **EMT live** (departure in ≤ 20 min): if the timetable line is currently on its way to the stop, the real waiting time replaces the planned one. 3. **Estimate** if there is no direct line (maybe possible with a transfer): walking + 4 min wait + distance at 18 km/h. |
+| Transit | 1. **Timetable** (EMT GTFS): best direct bus line from a stop within 600 m of the start to a stop within 600 m of the destination, at the planned departure. Time = walk + wait (half the headway for frequency-based lines) + ride time by timetable + walk. If no direct bus runs at that time (wait > 60 min), transit is not an alternative. 2. **EMT live** (departure in ≤ 20 min): the collector reads the timetable's proposal from `plan/…` and asks EMT for exactly its boarding stop, keeping only that line in its direction. The first bus that can still be reached on foot replaces the planned waiting time. Without a direct line there is no live data. 3. **Estimate** if there is no direct line (maybe possible with a transfer): walking + 4 min wait + distance at 18 km/h. |
 | Full destination station | not an issue, the bike can be left next to it |
 | Default limits | cautious: no rain, wind up to 25 km/h, 8–30 °C |
 | Notifications | only inside the time window: warning on a change to "warn" (also on entering the window), pre-departure info 15 min before, all-clear only after a warning |
