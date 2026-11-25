@@ -464,8 +464,8 @@
         "ce2c74e0f8fc9ce4"
       ]
     ],
-    "x": 520,
-    "y": 200,
+    "x": 540,
+    "y": 300,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -486,7 +486,7 @@
       ]
     ],
     "x": 200,
-    "y": 100,
+    "y": 130,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -507,7 +507,7 @@
       ]
     ],
     "x": 200,
-    "y": 150,
+    "y": 280,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -528,7 +528,7 @@
       ]
     ],
     "x": 200,
-    "y": 200,
+    "y": 330,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -549,7 +549,7 @@
       ]
     ],
     "x": 200,
-    "y": 250,
+    "y": 480,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -573,7 +573,7 @@
       ]
     ],
     "x": 200,
-    "y": 300,
+    "y": 530,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -590,8 +590,8 @@
     "expiry": "",
     "broker": "371a175cdaa0c57c",
     "wires": [],
-    "x": 760,
-    "y": 200,
+    "x": 780,
+    "y": 300,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -601,7 +601,7 @@
     "name": "What the phone sees",
     "info": "MQTT app on the phone: subscribe to `.../alerts/<user>` and `.../reco/<user>/#`.",
     "x": 200,
-    "y": 360,
+    "y": 610,
     "wires": []
   },
   {
@@ -622,7 +622,7 @@
       ]
     ],
     "x": 180,
-    "y": 400,
+    "y": 650,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -639,7 +639,7 @@
     "statusType": "auto",
     "wires": [],
     "x": 420,
-    "y": 400,
+    "y": 650,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -655,8 +655,8 @@
     "statusVal": "",
     "statusType": "auto",
     "wires": [],
-    "x": 340,
-    "y": 460,
+    "x": 380,
+    "y": 720,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -667,7 +667,7 @@
     "scope": null,
     "uncaught": false,
     "x": 140,
-    "y": 460,
+    "y": 720,
     "wires": [
       [
         "c191860551201ba6"
@@ -688,7 +688,7 @@
     "rh": 0,
     "inputs": 0,
     "x": 200,
-    "y": 60,
+    "y": 80,
     "wires": [
       [
         "227226d5f179f0e4"
@@ -709,7 +709,7 @@
     "rh": 0,
     "inputs": 0,
     "x": 200,
-    "y": 20,
+    "y": 180,
     "wires": [
       [
         "227226d5f179f0e4"
@@ -730,7 +730,7 @@
     "rh": 0,
     "inputs": 0,
     "x": 200,
-    "y": -20,
+    "y": 230,
     "wires": [
       [
         "227226d5f179f0e4"
@@ -750,7 +750,7 @@
     "z": "cf931b46039477f7",
     "name": "Page \"Route overview\": one card per route (bike ok / warning)",
     "info": "The function **Build cards** collects the recommendation of every route (`.../reco/+/+`); the template **Route cards** shows one card per route.",
-    "x": 260,
+    "x": 300,
     "y": 40,
     "wires": []
   },
@@ -791,7 +791,7 @@
         "ae89ea10c631b485"
       ]
     ],
-    "x": 330,
+    "x": 380,
     "y": 80,
     "z": "cf931b46039477f7"
   },
@@ -815,7 +815,7 @@
     "wires": [
       []
     ],
-    "x": 520,
+    "x": 660,
     "y": 80,
     "z": "cf931b46039477f7"
   },
@@ -825,8 +825,8 @@
     "z": "cf931b46039477f7",
     "name": "Page \"Manage routes\": start/destination station, departure, personal limits",
     "info": "Every field sends to **Form** with its own msg.topic. On \"Add route\" the route is published retained on `.../routes/<user>/<route>`; settings go to `.../users/<user>/settings`.",
-    "x": 260,
-    "y": 240,
+    "x": 310,
+    "y": 480,
     "wires": []
   },
   {
@@ -851,8 +851,8 @@
         "b9543660a0a40e62"
       ]
     ],
-    "x": 600,
-    "y": 380,
+    "x": 960,
+    "y": 780,
     "z": "cf931b46039477f7"
   },
   {
@@ -884,8 +884,8 @@
     "width": "12",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 290,
+    "x": 660,
+    "y": 540,
     "z": "cf931b46039477f7"
   },
   {
@@ -917,8 +917,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 330,
+    "x": 660,
+    "y": 580,
     "z": "cf931b46039477f7"
   },
   {
@@ -956,8 +956,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 450,
+    "x": 660,
+    "y": 780,
     "z": "cf931b46039477f7"
   },
   {
@@ -991,8 +991,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 490,
+    "x": 660,
+    "y": 1020,
     "z": "cf931b46039477f7"
   },
   {
@@ -1030,8 +1030,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 530,
+    "x": 660,
+    "y": 1060,
     "z": "cf931b46039477f7"
   },
   {
@@ -1048,8 +1048,8 @@
     "expiry": "",
     "broker": "371a175cdaa0c57c",
     "wires": [],
-    "x": 1300,
-    "y": 330,
+    "x": 1200,
+    "y": 730,
     "z": "cf931b46039477f7"
   },
   {
@@ -1072,8 +1072,8 @@
     "width": "6",
     "height": "0",
     "className": "",
-    "x": 1300,
-    "y": 430,
+    "x": 1200,
+    "y": 790,
     "z": "cf931b46039477f7"
   },
   {
@@ -1094,7 +1094,7 @@
       ]
     ],
     "x": 140,
-    "y": 680,
+    "y": 700,
     "z": "cf931b46039477f7"
   },
   {
@@ -1113,8 +1113,8 @@
         "a7a0d0a4fdc5706c"
       ]
     ],
-    "x": 360,
-    "y": 680,
+    "x": 380,
+    "y": 700,
     "z": "cf931b46039477f7"
   },
   {
@@ -1123,8 +1123,8 @@
     "z": "cf931b46039477f7",
     "name": "Page \"System & demo\"",
     "info": "",
-    "x": 200,
-    "y": 760,
+    "x": 240,
+    "y": 1120,
     "wires": []
   },
   {
@@ -1146,7 +1146,7 @@
       ]
     ],
     "x": 140,
-    "y": 800,
+    "y": 1160,
     "z": "cf931b46039477f7"
   },
   {
@@ -1165,8 +1165,8 @@
         "4d5787333495d484"
       ]
     ],
-    "x": 330,
-    "y": 800,
+    "x": 380,
+    "y": 1160,
     "z": "cf931b46039477f7"
   },
   {
@@ -1192,8 +1192,8 @@
     "order": 1,
     "width": "6",
     "className": "",
-    "x": 520,
-    "y": 800,
+    "x": 660,
+    "y": 1160,
     "z": "cf931b46039477f7"
   },
   {
@@ -1214,7 +1214,7 @@
       ]
     ],
     "x": 140,
-    "y": 850,
+    "y": 230,
     "z": "cf931b46039477f7"
   },
   {
@@ -1236,8 +1236,8 @@
         "8dcacaebc1ed0b73"
       ]
     ],
-    "x": 620,
-    "y": 960,
+    "x": 460,
+    "y": 1240,
     "z": "cf931b46039477f7"
   },
   {
@@ -1275,8 +1275,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 760,
-    "y": 720,
+    "x": 200,
+    "y": 1220,
     "z": "cf931b46039477f7"
   },
   {
@@ -1299,8 +1299,8 @@
         "e9a5bb38b5fe76e2"
       ]
     ],
-    "x": 380,
-    "y": 1070,
+    "x": 140,
+    "y": 1260,
     "z": "cf931b46039477f7"
   },
   {
@@ -1317,8 +1317,8 @@
     "expiry": "",
     "broker": "371a175cdaa0c57c",
     "wires": [],
-    "x": 840,
-    "y": 960,
+    "x": 660,
+    "y": 1220,
     "z": "cf931b46039477f7"
   },
   {
@@ -1334,8 +1334,8 @@
     "statusVal": "",
     "statusType": "auto",
     "wires": [],
-    "x": 340,
-    "y": 1180,
+    "x": 380,
+    "y": 1340,
     "z": "cf931b46039477f7"
   },
   {
@@ -1346,7 +1346,7 @@
     "scope": null,
     "uncaught": false,
     "x": 140,
-    "y": 1180,
+    "y": 1340,
     "wires": [
       [
         "cb13d38f8a2e9b8e"
@@ -1637,8 +1637,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 370,
+    "x": 660,
+    "y": 620,
     "z": "cf931b46039477f7"
   },
   {
@@ -1672,8 +1672,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 410,
+    "x": 660,
+    "y": 660,
     "z": "cf931b46039477f7"
   },
   {
@@ -1705,8 +1705,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 330,
+    "x": 660,
+    "y": 700,
     "z": "cf931b46039477f7"
   },
   {
@@ -1764,8 +1764,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 360,
-    "y": 290,
+    "x": 660,
+    "y": 740,
     "z": "cf931b46039477f7"
   },
   {
@@ -1785,7 +1785,7 @@
     "onceDelay": 2,
     "topic": "",
     "x": 140,
-    "y": 250,
+    "y": 560,
     "wires": [
       [
         "a9c502e68d9ef9cb"
@@ -1804,8 +1804,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 160,
-    "y": 290,
+    "x": 380,
+    "y": 560,
     "wires": [
       [
         "db13902a3043a40d"
@@ -1847,8 +1847,8 @@
     "width": "6",
     "height": "0",
     "className": "",
-    "x": 1300,
-    "y": 1060,
+    "x": 660,
+    "y": 1260,
     "z": "cf931b46039477f7"
   },
   {
@@ -1918,8 +1918,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 560,
-    "y": 520,
+    "x": 660,
+    "y": 820,
     "z": "cf931b46039477f7"
   },
   {
@@ -1949,8 +1949,8 @@
     "colorTrack": "",
     "colorThumb": "",
     "showTextField": false,
-    "x": 560,
-    "y": 560,
+    "x": 660,
+    "y": 860,
     "wires": [
       [
         "5863149a8965c7e0"
@@ -1986,8 +1986,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 560,
-    "y": 600,
+    "x": 660,
+    "y": 900,
     "z": "cf931b46039477f7"
   },
   {
@@ -2019,8 +2019,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 560,
-    "y": 640,
+    "x": 660,
+    "y": 940,
     "z": "cf931b46039477f7"
   },
   {
@@ -2058,8 +2058,8 @@
     "width": "6",
     "height": "1",
     "className": "",
-    "x": 560,
-    "y": 680,
+    "x": 660,
+    "y": 980,
     "z": "cf931b46039477f7"
   },
   {
@@ -2082,8 +2082,8 @@
     "width": "6",
     "height": "0",
     "className": "",
-    "x": 1300,
-    "y": 680,
+    "x": 1200,
+    "y": 840,
     "z": "cf931b46039477f7"
   },
   {
@@ -2099,8 +2099,8 @@
     "rap": true,
     "rh": 0,
     "inputs": 0,
-    "x": 120,
-    "y": 760,
+    "x": 140,
+    "y": 620,
     "wires": [
       [
         "74265ef5969106f9"
@@ -2119,8 +2119,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 360,
-    "y": 760,
+    "x": 380,
+    "y": 620,
     "wires": [
       [
         "443e69502ba24116",
@@ -2146,7 +2146,7 @@
       ]
     ],
     "x": 200,
-    "y": 600,
+    "y": 380,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -2167,7 +2167,7 @@
       ]
     ],
     "x": 200,
-    "y": 640,
+    "y": 430,
     "z": "c74bf7aebad4c5d0"
   },
   {
@@ -2247,7 +2247,7 @@
     "expiry": "",
     "broker": "371a175cdaa0c57c",
     "wires": [],
-    "x": 820,
+    "x": 900,
     "y": 200,
     "z": "mm7tabstats00001"
   },
@@ -2258,7 +2258,7 @@
     "name": "Statistics service: live data -> key figures (retained on .../stats/...)",
     "info": "Every minute counts the free bikes, the fill level in the centre and the outskirts and the bike movements.\n\n- .../stats/now: current figures\n- .../stats/spatial: distance to Puerta del Sol and fill level per station\n- .../stats/history: history (retained, taken over again after a restart)",
     "x": 300,
-    "y": 60,
+    "y": 40,
     "wires": []
   },
   {
@@ -2273,7 +2273,7 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 580,
+    "x": 520,
     "y": 200,
     "wires": [
       [
@@ -2299,7 +2299,7 @@
       ]
     ],
     "x": 200,
-    "y": 120,
+    "y": 100,
     "z": "mm7tabstats00001"
   },
   {
@@ -2320,7 +2320,7 @@
       ]
     ],
     "x": 200,
-    "y": 170,
+    "y": 150,
     "z": "mm7tabstats00001"
   },
   {
@@ -2341,7 +2341,7 @@
       ]
     ],
     "x": 200,
-    "y": 220,
+    "y": 200,
     "z": "mm7tabstats00001"
   },
   {
@@ -2362,7 +2362,7 @@
       ]
     ],
     "x": 200,
-    "y": 270,
+    "y": 250,
     "z": "mm7tabstats00001"
   },
   {
@@ -2382,7 +2382,7 @@
     "onceDelay": "15",
     "topic": "tick",
     "x": 200,
-    "y": 320,
+    "y": 300,
     "wires": [
       [
         "mm7statfn0000001"
@@ -2402,8 +2402,8 @@
     "targetType": "full",
     "statusVal": "",
     "statusType": "auto",
-    "x": 560,
-    "y": 300,
+    "x": 380,
+    "y": 380,
     "wires": []
   },
   {
@@ -2413,8 +2413,8 @@
     "name": "Errors in this tab",
     "scope": null,
     "uncaught": false,
-    "x": 360,
-    "y": 300,
+    "x": 140,
+    "y": 380,
     "wires": [
       [
         "mm7statdbg000001"
@@ -2427,8 +2427,8 @@
     "z": "cf931b46039477f7",
     "name": "Page \"Statistics\": key figures and charts (from the tab Statistics)",
     "info": "",
-    "x": 1100,
-    "y": 60,
+    "x": 330,
+    "y": 140,
     "wires": []
   },
   {
@@ -2451,8 +2451,8 @@
     "wires": [
       []
     ],
-    "x": 1340,
-    "y": 120,
+    "x": 660,
+    "y": 200,
     "z": "cf931b46039477f7"
   },
   {
@@ -2467,8 +2467,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 1120,
-    "y": 120,
+    "x": 380,
+    "y": 200,
     "wires": [
       [
         "mm7kpitpl0000001"
@@ -2487,8 +2487,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 1120,
-    "y": 240,
+    "x": 380,
+    "y": 320,
     "wires": [
       [
         "mm7chartwave0001"
@@ -2524,8 +2524,8 @@
         "mm7kpifn00000001"
       ]
     ],
-    "x": 880,
-    "y": 100,
+    "x": 140,
+    "y": 180,
     "z": "cf931b46039477f7"
   },
   {
@@ -2546,8 +2546,8 @@
         "mm7chartfn000001"
       ]
     ],
-    "x": 880,
-    "y": 200,
+    "x": 140,
+    "y": 280,
     "z": "cf931b46039477f7"
   },
   {
@@ -2567,8 +2567,8 @@
         "mm7chartfn000001"
       ]
     ],
-    "x": 880,
-    "y": 260,
+    "x": 140,
+    "y": 340,
     "z": "cf931b46039477f7"
   },
   {
@@ -2627,8 +2627,8 @@
     "height": 6,
     "className": "",
     "interpolation": "linear",
-    "x": 1400,
-    "y": 200,
+    "x": 660,
+    "y": 280,
     "wires": [
       []
     ]
@@ -2689,8 +2689,8 @@
     "height": 6,
     "className": "",
     "interpolation": "linear",
-    "x": 1400,
-    "y": 250,
+    "x": 660,
+    "y": 320,
     "wires": [
       []
     ]
@@ -2751,8 +2751,8 @@
     "height": 4,
     "className": "",
     "interpolation": "linear",
-    "x": 1400,
-    "y": 300,
+    "x": 660,
+    "y": 360,
     "wires": [
       []
     ]
@@ -2813,8 +2813,8 @@
     "height": 3,
     "className": "",
     "interpolation": "linear",
-    "x": 1400,
-    "y": 340,
+    "x": 660,
+    "y": 400,
     "wires": [
       []
     ]
@@ -2875,8 +2875,8 @@
     "height": 4,
     "className": "",
     "interpolation": "linear",
-    "x": 1400,
-    "y": 380,
+    "x": 660,
+    "y": 440,
     "wires": [
       []
     ]
@@ -2901,8 +2901,8 @@
     "wires": [
       []
     ],
-    "x": 1380,
-    "y": 400,
+    "x": 960,
+    "y": 280,
     "z": "cf931b46039477f7"
   },
   {
@@ -2925,8 +2925,8 @@
     "wires": [
       []
     ],
-    "x": 1380,
-    "y": 450,
+    "x": 960,
+    "y": 320,
     "z": "cf931b46039477f7"
   },
   {
@@ -2949,8 +2949,8 @@
     "wires": [
       []
     ],
-    "x": 1380,
-    "y": 500,
+    "x": 960,
+    "y": 360,
     "z": "cf931b46039477f7"
   }
 ]
