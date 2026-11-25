@@ -171,7 +171,7 @@ python3 client.py delete-route gabriel to-university
 Screen: on the left the dashboard (*Route overview*), on the right a terminal with `python3 client.py listen demo` and next to it a subscriber showing the raw messages (`mosquitto_sub` or MQTT Explorer). The dashboard has no pop-ups: it shows the state, the notifications go to the client.
 
 1. **Add a route**: on *Manage routes*, as user `demo`, add a route with departure in about 12 min (or on *System & demo* "Create demo route": Sol → Ciudad Universitaria, departure in 14 min, default limits). The subscriber shows `routes/demo/…`, the card appears, the client reports "saved … ✓ Bike is fine" and shortly afterwards the pre-departure info.
-2. **Personal limits with real weather**: under *My settings* set the minimum temperature above the current temperature → **warning** with alternatives (bus by timetable, walking). Set it back → **all-clear**.
+2. **Personal limits with real weather**: under *Settings* set the minimum temperature above the current temperature → **warning** with alternatives (bus by timetable, walking). Set it back → **all-clear**.
 3. **Last Will and keep-alive**: freeze the collector with `kill -STOP <PID>` (connection stays open, but no more pings) → after about 45 s the broker publishes "offline (crashed)", a hint appears on *Statistics* and *System & demo*, the route card switches to "? Data missing" without a false all-clear. `kill -CONT <PID>` → the collector reconnects, "online". (With `kill -9` the will comes at once, because the operating system closes the connection.)
 4. Optional **persistent session**: stop the client, change a setting, restart the client → "(session resumed)", the missed notification is delivered.
 
